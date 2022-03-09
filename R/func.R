@@ -75,7 +75,7 @@ get_lineage_map <- function(tree) {
         lineage <- node
         i <- 0
         while(i < iter.max & !is.null(node)) {
-            node <- phytools::getParent(tree, node)
+            trash <- capture.output(node <- phytools::getParent(tree, node))
             lineage <- c(node, lineage)
             i <- i+1
         }
@@ -135,7 +135,6 @@ chronoG <- function(n_samples, n_samples_is_average=T, starting_cells=1, s=0.004
         current_node <- d$node[d$gentime==g]
 
         if(length(current_node) > 0) {
-            #message(g,' bifurcation!')
             ## get the samples on either side of the bifurcation
             split <- d$node[d$parent==current_node]
             get_samples <- function(node, map) {
@@ -167,11 +166,11 @@ chronoG <- function(n_samples, n_samples_is_average=T, starting_cells=1, s=0.004
 
     limit <- n_gens - 1
     for(g in 1:limit) {
-        message(g)
+        #message(g)
         levels <- as.integer(gm[g,])
         unique_levels <- unique(levels)
         nl <- length(unique_levels)
-        tmp <- simulate_mutations_in_levels_for_gen(nl, n_markers)
+        tmp <- simulate_mutations_in_levels_for_gen(nl, n_markers, mu)
         i <- 1
         for(i in 1:nl) { 
             lev <- unique_levels[i]

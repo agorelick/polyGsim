@@ -1,10 +1,3 @@
-#library(Rcpp)
-#library(phytools)
-#library(TreeTools)
-#library(ape)
-#library(data.table)
-#library(ggtree)
-
 
 ##' random_generations
 ##' @export
@@ -87,18 +80,19 @@ get_lineage_map <- function(tree) {
         names(out) <- x
         out
     }
-    tmp <- rbindlist(lapply(l, tobinary),fill=T)
-    tmp <- tmp[,order(as.integer(colnames(tmp))),with=F]
-    tmp[is.na(tmp)] <- 0
-    tmp <- as.data.frame(tmp)
-    rownames(tmp) <- samples
-    tmp
+    map <- rbindlist(lapply(l, tobinary),fill=T)
+    map <- map[,order(as.integer(colnames(map))),with=F]
+    map[is.na(map)] <- 0
+    map <- as.data.frame(map)
+    rownames(map) <- samples
+    colnames(map) <- paste0('n',colnames(map))
+    map
 }
 
 
 ##' chronoG
 ##' @export
-chronoG <- function(n_samples, n_samples_is_average=T, starting_cells=1, s=0.004, k=3, max_gens=1e4, max_cells=1e12, n_markers=58, mu=1e-4) {
+chronoG <- function(n_samples, n_samples_is_average=T, starting_cells=1, s=0.004, k=3, max_gens=1e4, max_cells=1e12, n_markers=58, mu=1e-4, beta_params=c(2,2)) {
 
     ## simulate the cancer coalescence tree
     #sourceCpp('simulate.cpp')
@@ -124,7 +118,6 @@ chronoG <- function(n_samples, n_samples_is_average=T, starting_cells=1, s=0.004
 
     ## get lineage-map
     map <- get_lineage_map(tree) # rows are the tips. columns are parent nodes
-    colnames(map) <- paste0('n',colnames(map))
 
     ## loop across the cell divisions. keep track of the different ongoing genotypes
     ## gm is the generation-matrix tracking changes in lineages
@@ -175,12 +168,12 @@ chronoG <- function(n_samples, n_samples_is_average=T, starting_cells=1, s=0.004
         for(i in 1:nl) { 
             lev <- unique_levels[i]
             affected_samples <- which(levels==lev)
-            for(s in affected_samples) {
-                gt[s,] <- gt[s,] + tmp[i,]    
+            for(sa in affected_samples) {
+                gt[sa,] <- gt[sa,] + tmp[i,]    
             }
         } 
     }
-
+    rm(sa)
 
     ## collapse the genotypes to a mean marker length (in tumor) for each sample
     row_to_mean_length <- function(x) {
@@ -195,15 +188,26 @@ chronoG <- function(n_samples, n_samples_is_average=T, starting_cells=1, s=0.004
     normal <- rep(0,ncol(gt))
     gt <- rbind(gt, normal)
 
+
+    ## randomly generate tumor purities
+    purities <- matrix(ncol=1,nrow=n_samples)
+    purities[,1] <- rbeta(n=n_samples, shape1=beta_params[1], shape2=beta_params[2])
+    rownames(purities) <- samples
+    colnames(purities) <- 'purity'
+
+    ## create 'observed' genotype data, which is the underlying tumor marker lengths scaled by their purities. This can be treated as the observed difference in mean-marker-lengths from the normal.
+    gt_obs <- copy(gt)
+    for(sa in samples) gt_obs[sa,] <- gt[sa,] * purities[sa,1]
+    rm(sa)
+
     #dm <- dist(gt, method='euclidean')
     #tree2 <- upgma(dm)
     #tree2 <- nj(dm)
     #tree2 <- phytools::reroot(tree2, node.number=grep('normal',tree2$tip.label))
 
-    params <- list(n_samples=n_samples, n_gens=n_gens, n_samples_is_average=n_samples_is_average,  starting_cells=starting_cells, s=s, k=k, max_gens=max_gens, max_cells=max_cells, n_markers=n_markers, mu=mu) 
+    params <- list(n_samples=n_samples, n_gens=n_gens, n_cells=gens$final_cells, extinctions=gens$n_extinctions, n_samples_is_average=n_samples_is_average,  starting_cells=starting_cells, s=s, k=k, max_gens=max_gens, max_cells=max_cells, n_markers=n_markers, mu=mu) 
 
-    list(tree=tree, gt=gt, gm=gm, map=map, max_gens=max_gens, params=params)
-
+    list(tree=tree, gt=gt, gt_obs=gt_obs, purities=purities, gm=gm, map=map, params=params)
 }
 
 

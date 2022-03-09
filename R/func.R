@@ -1,15 +1,14 @@
-library(Rcpp)
-library(phytools)
-library(TreeTools)
-library(ape)
-library(data.table)
-library(ggtree)
+#library(Rcpp)
+#library(phytools)
+#library(TreeTools)
+#library(ape)
+#library(data.table)
+#library(ggtree)
 
 
-
-##' rgens
+##' random_generations
 ##' @export
-rgens <- function(starting_cells, s, k, max_gens, max_cells) { 
+random_generations <- function(starting_cells=1, s=0.004, k=3, max_gens=1e4, max_cells=1e12) { 
     ## use simple branching process to simulate a number of cell divisions for cancer to reach 10^12 cells
     n_cells <- starting_cells
     gen = 0
@@ -18,7 +17,6 @@ rgens <- function(starting_cells, s, k, max_gens, max_cells) {
         death_prob <- 0.5*(1-s)^k
         dead_cells <- rbinom(n=1,size=n_cells,prob=death_prob)
         remaining_cells <- n_cells - dead_cells
-
         if(remaining_cells > 0) {
             n_cells <- remaining_cells * 2
         } else {
@@ -34,7 +32,8 @@ rgens <- function(starting_cells, s, k, max_gens, max_cells) {
 
 ##' sim_coalescence
 ##' @export
-sim_coalescence <- function(n_samples,n_samples_is_average) {  
+sim_coalescence <- function(n_samples,n_samples_is_average=T) {  
+
     ## pick a random number of samples with the given average lambda
     if(n_samples_is_average) n_samples <- rpois(1,lambda=n_samples)
 
@@ -103,14 +102,14 @@ chronoG <- function(n_samples, n_samples_is_average=T, starting_cells=1, s=0.004
 
     ## simulate the cancer coalescence tree
     #sourceCpp('simulate.cpp')
-    tree <- sim_coalescence(n_samples,n_samples_is_average); rm(n_samples)
+    tree <- sim_coalescence(n_samples=n_samples,n_samples_is_average=n_samples_is_average); rm(n_samples)
     samples <- tree$tip.label
     samples <- samples[samples!='normal']
     n_samples <- length(samples)
     tree <- Preorder(tree) ## necessary
 
     ## generate a random number of cell divisions for the above phylogeny
-    gens <- rgens(starting_cells, s, k, max_gens, max_cells)
+    gens <- random_generations(starting_cells=starting_cells, s=s, k=k, max_gens=max_gens, max_cells=max_cells)
     n_gens <- gens$generations
 
     ## extract tree data
@@ -202,9 +201,7 @@ chronoG <- function(n_samples, n_samples_is_average=T, starting_cells=1, s=0.004
     #tree2 <- nj(dm)
     #tree2 <- phytools::reroot(tree2, node.number=grep('normal',tree2$tip.label))
 
-    params <- list(n_samples=n_samples, n_gens=n_gens, n_samples_is_average=n_samples_is_average, 
-                   starting_cells=starting_cells, s=s, k=k, max_gens=max_gens, max_cells=max_cells, n_markers=n_markers, mu=mu) 
-
+    params <- list(n_samples=n_samples, n_gens=n_gens, n_samples_is_average=n_samples_is_average,  starting_cells=starting_cells, s=s, k=k, max_gens=max_gens, max_cells=max_cells, n_markers=n_markers, mu=mu) 
 
     list(tree=tree, gt=gt, gm=gm, map=map, max_gens=max_gens, params=params)
 

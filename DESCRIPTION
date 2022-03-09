@@ -1,14 +1,15 @@
 Package: chronoG
 Type: Package
-Title: What the Package Does in One 'Title Case' Line
+Title: Simulate random multi-sample coalescence trees and corresponding poly-guanine genotypes.
 Version: 0.1
 Date: 2022-03-09
 Author: Alexander Gorelick
 Maintainer: Alexander Gorelick <agorelick@mgh.harvard.edu>
-Description: Simulate random multi-sample coalescence trees and corresponding poly-guanine genotypes.
+Description: To do.
 License: GPL (>= 2)
-Imports:
-    Rcpp (>= 1.0.7),
+Requires:
+    Rcpp (>= 1.0.7)
+Depends:
     phytools,
     TreeTools,
     ape,

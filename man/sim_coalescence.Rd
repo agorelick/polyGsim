@@ -4,7 +4,7 @@
 \alias{sim_coalescence}
 \title{sim_coalescence}
 \usage{
-sim_coalescence(n_samples, n_samples_is_average)
+sim_coalescence(n_samples, n_samples_is_average = T)
 }
 \description{
 sim_coalescence

@@ -129,7 +129,7 @@ chronoG <- function(n_samples, n_samples_is_average=T, starting_cells=1, s=0.004
 
         if(length(current_node) > 0) {
             ## get the samples on either side of the bifurcation
-            split <- d$node[d$parent==current_node]
+            split <- d$node[d$parent %in% current_node]
             get_samples <- function(node, map) {
                 which(map[[paste0('n',node)]]==1)
             }
@@ -137,17 +137,22 @@ chronoG <- function(n_samples, n_samples_is_average=T, starting_cells=1, s=0.004
 
             ## get the new levels to add to the matrix
             current_level <- max(gm)
-            new_levels <- current_level + c(1,2)
+            new_levels <- current_level + 1:length(split)
 
             ## update the levels from this generation onward 
-            gm[g:nrow(gm),split[[1]]] <- new_levels[1]
-            gm[g:nrow(gm),split[[2]]] <- new_levels[2]
+            for(this.level in 1:length(new_levels)) {
+                gm[g:nrow(gm),split[[this.level]]] <- new_levels[this.level]
+            }
         }
     }
 
+    #browser()
+    ## generate a random normal genotype
+    normal <- sample(10:25,replace=T,size=n_markers*2)
+
     ## gt is the genotype matrix
     gt <- matrix(nrow=n_samples,ncol=n_markers*2)
-    gt[is.na(gt)] <- 0
+    for(i in 1:nrow(gt)) gt[i,] <- normal #gt[is.na(gt)] <- 0
     rownames(gt) <- colnames(gm)
 
     simulate_mutations_in_levels_for_gen <- function(n_levels, n_markers, mu) {
@@ -175,6 +180,10 @@ chronoG <- function(n_samples, n_samples_is_average=T, starting_cells=1, s=0.004
     }
     rm(sa)
 
+    ## add the normal to the last row
+    gt <- rbind(gt, normal)
+    #browser()
+
     ## collapse the genotypes to a mean marker length (in tumor) for each sample
     row_to_mean_length <- function(x) {
         n_markers <- length(x) / 2
@@ -184,10 +193,6 @@ chronoG <- function(n_samples, n_samples_is_average=T, starting_cells=1, s=0.004
         mu
     }
     gt <- t(apply(gt, 1, row_to_mean_length))
-    ## add normal genotype (all 0)
-    normal <- rep(0,ncol(gt))
-    gt <- rbind(gt, normal)
-
 
     ## randomly generate tumor purities
     purities <- matrix(ncol=1,nrow=n_samples)
@@ -197,18 +202,123 @@ chronoG <- function(n_samples, n_samples_is_average=T, starting_cells=1, s=0.004
 
     ## create 'observed' genotype data, which is the underlying tumor marker lengths scaled by their purities. This can be treated as the observed difference in mean-marker-lengths from the normal.
     gt_obs <- copy(gt)
-    for(sa in samples) gt_obs[sa,] <- gt[sa,] * purities[sa,1]
+    normal <- as.numeric(gt_obs['normal',])
+    for(sa in samples) gt_obs[sa,] <- ( gt[sa,] * purities[sa,1] ) + (normal * (1 - purities[sa,1]))
     rm(sa)
 
-    #dm <- dist(gt, method='euclidean')
-    #tree2 <- upgma(dm)
-    #tree2 <- nj(dm)
-    #tree2 <- phytools::reroot(tree2, node.number=grep('normal',tree2$tip.label))
+    gt_obs_centered <- copy(gt_obs)
+    marker_min_meanlengths <- apply(gt_obs_centered, 2, min)
+    for(mi in 1:n_markers) {
+        gt_obs_centered[,mi] <- gt_obs_centered[,mi] - marker_min_meanlengths[mi]
+    }
+    rm(mi)
 
     params <- list(n_samples=n_samples, n_gens=n_gens, n_cells=gens$final_cells, extinctions=gens$n_extinctions, n_samples_is_average=n_samples_is_average,  starting_cells=starting_cells, s=s, k=k, max_gens=max_gens, max_cells=max_cells, n_markers=n_markers, mu=mu) 
 
-    list(tree=tree, gt=gt, gt_obs=gt_obs, purities=purities, gm=gm, map=map, params=params)
+    list(tree=tree, gt=gt, gt_obs=gt_obs, gt_obs_centered=gt_obs_centered, purities=purities, gm=gm, map=map, params=params)
 }
+
+
+##' get_angular_distance_matrix
+##' @export
+get_angular_distance_matrix <- function(d) {
+    ## get meanlength minus normal for sim data
+    ## d should be a matrix of mean-lengths where rows are samples and columns are markers
+
+    normal <- d['normal',]
+    for(i in 1:nrow(d)) d[i,] <- d[i,] - normal
+    colnames(d) <- paste0('m',1:ncol(d))
+    markerset <- colnames(d); 
+    usedsamps <- rownames(d)
+    usedsamps <- usedsamps[usedsamps!='normal']
+    meanlen_diff_normal <- as.data.frame(d)
+
+    Zij <- function(usedsamps,markerset,meanlen_diff_normal) {
+        #* for each used tumor sample calculate denom = sqrt(sum over markers(Y^2)) and Z = Y/denom
+        z <- list()
+        denom <- numeric()
+        for (t in usedsamps) {
+            denom[t] <- 0
+            for (m in markerset) {
+                denom[t] <- denom[t] + (meanlen_diff_normal[t,m]) ^ 2
+            }
+            denom[t] <- sqrt(denom[t])
+            for (m in markerset) {
+                z[[m]][t] <- meanlen_diff_normal[t,m]/denom[t]
+            }
+        }
+        z
+    }
+    Z <- Zij(usedsamps, markerset, meanlen_diff_normal)
+
+    ang_dist_matrix <- function(Z,usedsamps,ns,markerset,sel_normal_sample,power=1) {
+        # for each pair of samples in Z, calculate angular distance (exclude excluded samples)
+        # angular distance matrix
+        angular_dist <- matrix(0,nrow=ns,ncol=ns)
+        for (s1 in 1:(ns-1)) {
+            for (s2 in (s1+1):ns) {
+                for (m in markerset) {
+                    angular_dist[s1,s2] <- angular_dist[s1,s2] + Z[[m]][usedsamps[s1]]*Z[[m]][usedsamps[s2]]
+                }
+                angular_dist[s1,s2] <- (acos(pmin(pmax(angular_dist[s1,s2],-1.0),1.0)))^power
+                angular_dist[s2,s1] <- angular_dist[s1,s2]
+            }
+        }
+        colnames(angular_dist) <- usedsamps
+        rownames(angular_dist) <- usedsamps
+
+        #* add a column and row for the normal
+        angular_dist_w_root <- rbind(angular_dist,rep((pi/3)^power,ns))
+        angular_dist_w_root <- cbind(angular_dist_w_root,c(rep((pi/3)^power,ns),0))
+        colnames(angular_dist_w_root) <- c(usedsamps,sel_normal_sample)
+        rownames(angular_dist_w_root) <- c(usedsamps,sel_normal_sample)
+        angular_dist_w_root
+    }
+
+    dm <- ang_dist_matrix(Z, usedsamps, ns=length(usedsamps), markerset, sel_normal_sample='normal', power=1)
+    dm
+}
+
+
+##' load_marker_files
+##' @export
+load_marker_files <- function(marker_dir,return_mean_length=T) {
+    polyg_dir <- dir(marker_dir,full.names=T)
+    get_lengths <- function(i, polyg_dir) {
+        files <- polyg_dir[i]
+        load_file <- function(file) {
+            marker <- tail(strsplit(file,'[/]')[[1]],1)
+            marker <- strsplit(marker,'_')[[1]][1]        
+            x <- fread(file)
+            x <- cbind(length=1:nrow(x),x)
+            x <- melt(x, id.vars=c('length')) 
+            x$marker <- marker
+            x
+        }
+        l <- lapply(files, load_file)
+        out <- rbindlist(l,fill=T)
+        out
+    }
+    l <- lapply(1:length(polyg_dir), get_lengths, polyg_dir)
+    l <- rbindlist(l)
+
+    if(return_mean_length) {
+        f=function(s) paste(head(strsplit(s,'[_]')[[1]],-1),collapse='_')
+        l$sample <- sapply(as.character(l$variable), f)
+        l <- l[!is.na(length),]
+        get_mean <- function(l) {
+            mu=sum(l$length * l$value,na.rm=T) / sum(l$value,na.rm=T)
+            list(mu=mu)
+        }
+        l <- l[,get_mean(.SD),by=c('sample','marker')]
+        d <- dcast(sample ~ marker, value.var='mu', data=l)
+    } else {
+        d <- copy(l)
+    }
+    d
+}
+
+
 
 
 

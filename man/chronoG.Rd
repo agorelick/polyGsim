@@ -13,7 +13,8 @@ chronoG(
   max_gens = 10000,
   max_cells = 1e+12,
   n_markers = 58,
-  mu = 1e-04
+  mu = 1e-04,
+  beta_params = c(2, 2)
 )
 }
 \description{

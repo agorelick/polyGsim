@@ -6,8 +6,8 @@ importFrom(Rcpp, evalCpp)
 exportPattern("^[[:alpha:]]+")
 
 export(chronoG)
+export(get_angular_distance_matrix)
 export(get_lineage_map)
+export(load_marker_files)
 export(random_generations)
 export(sim_coalescence)
-
-

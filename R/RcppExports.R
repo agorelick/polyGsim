@@ -2,22 +2,22 @@
 # Generator token: 10BE3573-1514-4C36-9D1C-5A225CD40393
 
 rcpp_sum <- function(v) {
-    .Call(`_chronoG_rcpp_sum`, v)
+    .Call(`_chronoloG_rcpp_sum`, v)
 }
 
 rcpp_rbinom <- function(n, size, prob) {
-    .Call(`_chronoG_rcpp_rbinom`, n, size, prob)
+    .Call(`_chronoloG_rcpp_rbinom`, n, size, prob)
 }
 
 rcpp_rpois <- function(n, lambda) {
-    .Call(`_chronoG_rcpp_rpois`, n, lambda)
+    .Call(`_chronoloG_rcpp_rpois`, n, lambda)
 }
 
 rcpp_mutate <- function(gt, mu) {
-    .Call(`_chronoG_rcpp_mutate`, gt, mu)
+    .Call(`_chronoloG_rcpp_mutate`, gt, mu)
 }
 
 rcpp_mutate_length_matrix <- function(gt, mu, gens) {
-    .Call(`_chronoG_rcpp_mutate_length_matrix`, gt, mu, gens)
+    .Call(`_chronoloG_rcpp_mutate_length_matrix`, gt, mu, gens)
 }
 

@@ -90,9 +90,9 @@ get_lineage_map <- function(tree) {
 }
 
 
-##' chronoG
+##' chronoloG
 ##' @export
-chronoG <- function(n_samples, n_samples_is_average=T, starting_cells=1, s=0.004, k=3, max_gens=1e4, max_cells=1e12, n_markers=58, mu=1e-4, beta_params=c(2,2)) {
+chronoloG <- function(n_samples, n_samples_is_average=T, starting_cells=1, s=0.004, k=3, max_gens=1e4, max_cells=1e12, n_markers=58, mu=1e-4, beta_params=c(2,2)) {
 
     ## simulate the cancer coalescence tree
     #sourceCpp('simulate.cpp')

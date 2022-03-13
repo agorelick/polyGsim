@@ -12,7 +12,7 @@ Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 
 // rcpp_sum
 double rcpp_sum(NumericVector v);
-RcppExport SEXP _chronoG_rcpp_sum(SEXP vSEXP) {
+RcppExport SEXP _chronoloG_rcpp_sum(SEXP vSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -23,7 +23,7 @@ END_RCPP
 }
 // rcpp_rbinom
 NumericVector rcpp_rbinom(int n, int size, double prob);
-RcppExport SEXP _chronoG_rcpp_rbinom(SEXP nSEXP, SEXP sizeSEXP, SEXP probSEXP) {
+RcppExport SEXP _chronoloG_rcpp_rbinom(SEXP nSEXP, SEXP sizeSEXP, SEXP probSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -36,7 +36,7 @@ END_RCPP
 }
 // rcpp_rpois
 NumericVector rcpp_rpois(int n, double lambda);
-RcppExport SEXP _chronoG_rcpp_rpois(SEXP nSEXP, SEXP lambdaSEXP) {
+RcppExport SEXP _chronoloG_rcpp_rpois(SEXP nSEXP, SEXP lambdaSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -48,7 +48,7 @@ END_RCPP
 }
 // rcpp_mutate
 IntegerVector rcpp_mutate(IntegerVector gt, double mu);
-RcppExport SEXP _chronoG_rcpp_mutate(SEXP gtSEXP, SEXP muSEXP) {
+RcppExport SEXP _chronoloG_rcpp_mutate(SEXP gtSEXP, SEXP muSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -60,7 +60,7 @@ END_RCPP
 }
 // rcpp_mutate_length_matrix
 IntegerMatrix rcpp_mutate_length_matrix(IntegerMatrix gt, double mu, int gens);
-RcppExport SEXP _chronoG_rcpp_mutate_length_matrix(SEXP gtSEXP, SEXP muSEXP, SEXP gensSEXP) {
+RcppExport SEXP _chronoloG_rcpp_mutate_length_matrix(SEXP gtSEXP, SEXP muSEXP, SEXP gensSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -73,15 +73,15 @@ END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
-    {"_chronoG_rcpp_sum", (DL_FUNC) &_chronoG_rcpp_sum, 1},
-    {"_chronoG_rcpp_rbinom", (DL_FUNC) &_chronoG_rcpp_rbinom, 3},
-    {"_chronoG_rcpp_rpois", (DL_FUNC) &_chronoG_rcpp_rpois, 2},
-    {"_chronoG_rcpp_mutate", (DL_FUNC) &_chronoG_rcpp_mutate, 2},
-    {"_chronoG_rcpp_mutate_length_matrix", (DL_FUNC) &_chronoG_rcpp_mutate_length_matrix, 3},
+    {"_chronoloG_rcpp_sum", (DL_FUNC) &_chronoloG_rcpp_sum, 1},
+    {"_chronoloG_rcpp_rbinom", (DL_FUNC) &_chronoloG_rcpp_rbinom, 3},
+    {"_chronoloG_rcpp_rpois", (DL_FUNC) &_chronoloG_rcpp_rpois, 2},
+    {"_chronoloG_rcpp_mutate", (DL_FUNC) &_chronoloG_rcpp_mutate, 2},
+    {"_chronoloG_rcpp_mutate_length_matrix", (DL_FUNC) &_chronoloG_rcpp_mutate_length_matrix, 3},
     {NULL, NULL, 0}
 };
 
-RcppExport void R_init_chronoG(DllInfo *dll) {
+RcppExport void R_init_chronoloG(DllInfo *dll) {
     R_registerRoutines(dll, NULL, CallEntries, NULL, NULL);
     R_useDynamicSymbols(dll, FALSE);
 }

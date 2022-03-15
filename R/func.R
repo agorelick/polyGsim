@@ -318,6 +318,109 @@ load_marker_files <- function(marker_dir,return_mean_length=T) {
     d
 }
 
+##' group_samples
+##' @export
+group_samples <- function(input,lun=T,liv=T,per=T,primary_autopsy_is_distant=T,highlight_peritoneum_when_multi=T,color=F) {
+    if(any(c('data.frame','matrix') %in% class(input))) {
+        barcodes <- rownames(input)
+    } else if('character' %in% class(input)) {
+        barcodes <- input
+    }
+    info <- parse_barcode(barcodes)    
+    info[grepl('^N[0-9]',barcode) | grepl('^Normal[0-9]',barcode),group:='Normal']
+    info[grepl('^P[0-9]',barcode) | grepl('^PT[0-9]',barcode) | grepl('^PT[a-z][0-9]',barcode),group:='Primary']
+    info[grepl('^L[0-9]',barcode) | grepl('^LN[0-9]',barcode) | grepl('^TD[0-9]',barcode),group:='Locoregional']
+    info[grepl('^Lun[0-9]',barcode),group:='Lung']
+    info[grepl('^Liv[0-9]',barcode),group:='Liver']
+    #info[grepl('^Ad[0-9]',barcode) | grepl('^AD[0-9]',barcode),group:='Adenoma']
+    info[grepl('^Per[0-9]',barcode) | grepl('^Di[0-9]',barcode) | grepl('^Om[0-9]',barcode) | grepl('^PerOv[0-9]',barcode),group:='Peritoneum']
+    info[is.na(group),group:='Distant (other)']
+
+    if(lun==F) info[group=='Lung',group:='Distant (other)']
+    if(liv==F) info[group=='Liver',group:='Distant (other)']
+    if(per==F) info[group=='Peritoneum',group:='Distant (other)']
+    #if(tumor_deposit_with_lymph==F) info[grepl('^TD[0-9]',barcode),group:='Tumor deposit']
+    if(primary_autopsy_is_distant==T) info[group=='Primary' & autopsy==T,group:='Distant (other)']
+    out <- info[,c('barcode','group'),with=F]
+   
+    if(highlight_peritoneum_when_multi) {
+        ## default coloring showing all major types, but highlighting peritoneum
+        out[group=='Normal',color:='black']
+        out[group=='Primary',color:='#008c45']
+        out[group=='Locoregional',color:='#eb5b2b']
+        out[group=='Liver',color:='#4c86c6']
+        out[group=='Lung',color:='#ea6a8c']
+        out[group=='Peritoneum',color:='#fab31d']
+        out[group=='Distant (other)',color:='#534797']    
+    } else {
+        ## default coloring showing all major types, but highlighting lung
+        out[group=='Normal',color:='black']
+        out[group=='Primary',color:='#008c45']
+        out[group=='Locoregional',color:='#eb5b2b']
+        out[group=='Liver',color:='#4c86c6']
+        out[group=='Peritoneum',color:='#ea6a8c'] ## find alternative?
+        out[group=='Lung',color:='#fab31d']
+        out[group=='Distant (other)',color:='#534797']    
+    }
+
+    ## depending on which were included in input argumens, highlight single type
+    if(lun==T & liv==F & per==F) {
+        out[group=='Lung',color:='#fab31d']
+        out[group %in% 'Distant (other)',color:='#4c86c6']
+
+    } else if(lun==F & liv==T & per==F) {
+        out[group=='Liver',color:='#fab31d']
+        out[group %in% 'Distant (other)',color:='#4c86c6']
+
+    } else if(lun==F & liv==F & per==T) {
+        out[group=='Peritoneum',oolor:='#fab31d']
+        out[group %in% 'Distant (other)',color:='#4c86c6']
+    }
+    if(color==F) out[,color:=NULL]
+    
+    as.data.frame(out)
+}
+
+
+##' parse_barcode
+##' @export
+parse_barcode <- function(barcodes) {
+    ## extract the main tissue type, lesion, and sample number from each sample's barcode
+    .parse_barcode <- function(barcode) {
+        str <- strsplit(gsub("([A-Za-z]*)([0-9]*)([A-Za-z]*)", "\\1 \\2 \\3", barcode), " ")[[1]]
+        list(barcode=barcode,type=str[1],lesion=str[2],sample=str[3])
+    }
+    s <- rbindlist(lapply(barcodes, .parse_barcode))
+    s[is.na(sample),sample:='']
+    s[grepl('-A$',barcode),autopsy:=T]
+    s[!grepl('-A$',barcode),autopsy:=F]
+    s$sample <- gsub('-A$','',s$sample)
+    s
+}
+
+##' write_distance_matrix
+##' @export
+write_distance_matrix <- function (dm_df, filepath) {
+    write.table(dm_df, file = filepath, sep = "\t", quote = FALSE,
+                col.names = NA)
+}
+
+##' read_distance_matrix
+##' @export
+read_distance_matrix <- function (file, return.as.matrix = T) {
+    distance_matrix <- fread(file)
+    rows <- distance_matrix[[1]]
+    distance_matrix <- distance_matrix[, (2:ncol(distance_matrix)),
+        with = F]
+    m <- as.matrix(distance_matrix)
+    rownames(m) <- rows
+    if (return.as.matrix == F) {
+        as.dist(m, diag = T)
+    }
+    else {
+        m
+    }
+}
 
 
 

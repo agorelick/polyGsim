@@ -6,8 +6,7 @@
 \usage{
 random_generations(
   starting_cells = 1,
-  s = 0.004,
-  k = 3,
+  bdratio = 1.01,
   max_gens = 10000,
   max_cells = 1e+12
 )

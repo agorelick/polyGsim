@@ -10,10 +10,11 @@ License: GPL (>= 2)
 Requires:
     Rcpp (>= 1.0.7)
 Depends:
-    phytools,
-    TreeTools,
     ape,
     data.table,
-    ggtree
+    ggtree,
+    ggplot2,
+    cowplot,
+    Rcpp
 LinkingTo: Rcpp
 RoxygenNote: 7.1.2

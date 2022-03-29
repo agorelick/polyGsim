@@ -1,3 +1,40 @@
+##' get_genotypes
+##' @export
+get_genotypes <- function(indels, n_markers, gens_until_first_cancer_cell) {
+
+    get_marker_lengths <- function(indels, normal, first_cancer_cell) {
+        ## get genotypes (marker lengths) for each clone and marker-copy
+
+        clones <- rownames(indels)[rownames(indels)!='normal']
+        n_clones <- length(clones)
+        nc <- ncol(indels)
+
+        ## gt is the genotype matrix, each tumor starts with 1st cancer cell
+        gt <- matrix(nrow=n_clones,ncol=nc)
+        for(i in 1:nrow(gt)) gt[i,] <- as.integer(first_cancer_cell)
+        rownames(gt) <- clones
+        gt <- rbind(gt, normal)
+        rownames(gt)[nrow(gt)] <- 'normal'
+
+        ## add the indels encountered to each clone's original genotype
+        gt <- gt + indels
+        gt
+    }
+
+    ## normal is the average germline
+    normal <- t(as.matrix(sample(10:25,replace=T,size=n_markers*2)))
+
+    ## FCC is based on the germline after large number of divisions
+    first_cancer_cell <- rcpp_mutate_length_matrix(copy(normal), mu, gens=gens_until_first_cancer_cell)
+
+    ## simulate marker lengths
+    marker_lengths <- get_marker_lengths(indels, normal, first_cancer_cell)
+
+    ## get mean marker lengths for the pure clones and mets
+    gt <- get_mean_marker_length_matrix(marker_lengths, n_markers)
+    gt
+}
+
 
 ##' sim_chronology
 ##' @export
@@ -222,27 +259,6 @@ random_generations <- function(starting_cells=1, bdratio=1.01, max_gens=1e4, max
     }
     
     list(generations=gen, final_cells=n_cells, n_extinctions=n_extinctions)
-}
-
-
-##' get_genotypes
-##' @export
-get_genotypes <- function(indels, normal, first_cancer_cell) {
-
-    clones <- rownames(indels)[rownames(indels)!='normal']
-    n_clones <- length(clones)
-    nc <- ncol(indels)
-
-    ## gt is the genotype matrix, each tumor starts with 1st cancer cell
-    gt <- matrix(nrow=n_clones,ncol=nc)
-    for(i in 1:nrow(gt)) gt[i,] <- as.integer(first_cancer_cell)
-    rownames(gt) <- clones
-    gt <- rbind(gt, normal)
-    rownames(gt)[nrow(gt)] <- 'normal'
-
-    ## add the indels encountered to each clone's original genotype
-    gt <- gt + indels
-    gt
 }
 
 

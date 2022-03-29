@@ -1,38 +1,13 @@
 
-##' random_generations
+##' sim_chronology
 ##' @export
-random_generations <- function(starting_cells=1, s=0.004, k=3, max_gens=1e4, max_cells=1e12) { 
-    ## use simple branching process to simulate a number of cell divisions for cancer to reach 10^12 cells
-    n_cells <- starting_cells
-    gen = 0
-    n_extinctions <- 0
-    while(gen < max_gens & n_cells < max_cells) {
-        death_prob <- 0.5*(1-s)^k
-        dead_cells <- rbinom(n=1,size=n_cells,prob=death_prob)
-        remaining_cells <- n_cells - dead_cells
-        if(remaining_cells > 0) {
-            n_cells <- remaining_cells * 2
-        } else {
-            n_cells <- 1
-            gen <- 0
-            n_extinctions <- n_extinctions + 1
-        }
-        gen <- gen+1
-    }
-    list(generations=gen, final_cells=n_cells, n_extinctions=n_extinctions)
-}
+sim_chronology <- function(n_clones,n_is_avg=T,ancestor='normal') {  
+    ## pick a random number of clones with the given average lambda
+    if(n_is_avg) n_clones <- rpois(1,lambda=n_clones)
 
-
-##' sim_coalescence
-##' @export
-sim_coalescence <- function(n_samples,n_samples_is_average=T) {  
-
-    ## pick a random number of samples with the given average lambda
-    if(n_samples_is_average) n_samples <- rpois(1,lambda=n_samples)
-
-    ## random coalescence tree using ape::rcoal
-    samples <- paste0('s',1:n_samples)
-    tree <- rcoal(n_samples, tip.label=samples)
+    ## random tree toplogy
+    clones <- paste0('s',1:n_clones)
+    tree <- rtree(n_clones, tip.label=clones)
 
     ## randomly decide a length for the initial tumor branch (from a normal distribution fit to the internal branch lengths)
     branch_lengths <- tree$edge.length
@@ -45,66 +20,70 @@ sim_coalescence <- function(n_samples,n_samples_is_average=T) {
     ## add the normal branch to the tree    
     if(is.null(where)) where<-length(tree$tip)+1
     tip<-list(edge=matrix(c(2,1),1,2),
-              tip.label='normal',
+              tip.label=ancestor,
               edge.length=edge.length,
               Nnode=1)
     class(tip)<-"phylo"
     tree2 <- bind.tree(tree,tip,where=where)
 
     ## root the tree at the normal
-    tree2 <- phytools::reroot(tree2, node.number=grep('normal',tree2$tip.label))
+    tree2 <- phytools::reroot(tree2, node.number=which(tree2$tip.label==ancestor))
     return(tree2)
 }
 
 
-##' get_lineage_map
+##' get_clone_tree
 ##' @export
-get_lineage_map <- function(tree) { 
-    samples <- tree$tip.label
-    samples <- samples[samples!='normal']
-    n_samples <- length(samples)
-    ## get a vector of the nodes in the lineage leading to each sample
-    get_lineage_for_tip <- function(node,tree,iter.max=1e3) {
-        lineage <- node
-        i <- 0
-        while(i < iter.max & !is.null(node)) {
-            trash <- capture.output(node <- phytools::getParent(tree, node))
-            lineage <- c(node, lineage)
-            i <- i+1
-        }
-        lineage
+get_clone_tree <- function(n_primary_clones, n_is_avg=F, met_prob_per_clone=0.2, avg_mets_per_clone=4) { 
+
+    if(n_is_avg==T) {
+        n_primary_clones <- rpois(lambda=n_primary_clones,n=1)
+        if(n_primary_clones==0) n_primary_clones <- 1
     }
-    l <- lapply(1:n_samples, get_lineage_for_tip, tree)
-    tobinary <- function(x) {
-        out <- as.list(rep(1,length(x)))
-        names(out) <- x
-        out
+
+    ## tree for primary tumor clones
+    n_met_clones <- rbinom(size=n_primary_clones,n=1,prob=met_prob_per_clone)
+    if(n_met_clones==0) n_met_clones <- 1
+    n_clones <- n_primary_clones + n_met_clones ## this is PT clones + seeding-clones
+    ptree <- sim_chronology(n_clones,n_is_avg=F)
+    ptree$tip.label <- gsub('s','P',ptree$tip.label)
+
+    ## for each met-seeding clone, get a new random tree of mets, then bind it on 
+    tree <- copy(ptree)
+
+    for(i in 1:n_met_clones) { 
+        ## which PT clones seeded mets?
+        primary_clones <- grep('^P',tree$tip.label)
+        m <- sample(primary_clones,1)
+        current_clones <- grep('^M',tree$tip.label,value=T)
+
+        ## get the met tree
+        n_clones <- rpois(n=1,lambda=avg_mets_per_clone)
+        if(n_clones < 3) n_clones <- 3
+        mtree <- rtree(n_clones,rooted=T)
+        mtree$tip.label <- gsub('t','M',mtree$tip.label)
+        new_mets <- grep('^M',mtree$tip.label,value=T)
+        tmp <- data.table(to_rename=new_mets)
+        tmp$pos <- as.integer(gsub('M','',tmp$to_rename))
+        tmp <- tmp[order(pos),]
+        increment <- ifelse(length(current_clones) > 0, max(as.integer(gsub('M','',current_clones))), 0)
+        tmp[,new_name:=paste0('M',pos+increment)]
+        mtree$tip.label <- tmp$new_name       
+        tree <- bind.tree(tree, mtree, where=m)
+
+        ## fix PT clone numbering
+        pt_clones <- rev(grep('^P',tree$tip.label))
+        for(s in pt_clones) tree$tip.label[s] <- paste0('P',s)
     }
-    map <- rbindlist(lapply(l, tobinary),fill=T)
-    map <- map[,order(as.integer(colnames(map))),with=F]
-    map[is.na(map)] <- 0
-    map <- as.data.frame(map)
-    rownames(map) <- samples
-    colnames(map) <- paste0('n',colnames(map))
-    map
+
+    tree <- TreeTools::Preorder(tree)
+    tree
 }
 
 
-##' chronoloG
+##' get_indels_for_tree
 ##' @export
-chronoloG <- function(n_samples, n_samples_is_average=T, starting_cells=1, s=0.004, k=3, max_gens=1e4, max_cells=1e12, n_markers=58, mu=1e-4, beta_params=c(2,2)) {
-
-    ## simulate the cancer coalescence tree
-    #sourceCpp('simulate.cpp')
-    tree <- sim_coalescence(n_samples=n_samples,n_samples_is_average=n_samples_is_average); rm(n_samples)
-    samples <- tree$tip.label
-    samples <- samples[samples!='normal']
-    n_samples <- length(samples)
-    tree <- Preorder(tree) ## necessary
-
-    ## generate a random number of cell divisions for the above phylogeny
-    gens <- random_generations(starting_cells=starting_cells, s=s, k=k, max_gens=max_gens, max_cells=max_cells)
-    n_gens <- gens$generations
+get_indels_for_tree <- function(tree,max_gens,mu,n_markers) { 
 
     ## extract tree data
     d <- as.data.table(ggtree(tree)$data)
@@ -112,110 +91,158 @@ chronoloG <- function(n_samples, n_samples_is_average=T, starting_cells=1, s=0.0
     d <- d[-which(d$label=='normal'),]
     xpos <- d$x
     xpos <- xpos / max(xpos)
-    d$gentime <- round(xpos * n_gens)
-    d$add_gentime <- c(0,diff(d$gentime))
-    d <- d[2:nrow(d),]
+    d$gen_time <- round(xpos * max_gens)
+    d$gens_to_run <- c(0,diff(d$gen_time))
+    d <- d[gens_to_run > 0,]
 
-    ## get lineage-map
-    map <- get_lineage_map(tree) # rows are the tips. columns are parent nodes
 
-    ## loop across the cell divisions. keep track of the different ongoing genotypes
-    ## gm is the generation-matrix tracking changes in lineages
-    gm <- matrix(nrow=n_gens,ncol=n_samples)
-    gm[is.na(gm)] <- as.integer(0)
-    colnames(gm) <- samples
-    for(g in 1:(n_gens-1)) {
-        current_node <- d$node[d$gentime==g]
+    ## for each branch, run simulations for the according number of generations.
+    simulate_indels_over_gens_for_branch <- function(gens,mu,n_markers) {
+        gt_0 <- t(as.matrix(rep(0,n_markers*2))) ## initial genotype for each branch
+        gt_T <- rcpp_mutate_length_matrix(gt_0, mu, gens)
+        out <- as.list(gt_T[1,])
+    }
+    indels_for_each_branch <- lapply(d$gens_to_run, simulate_indels_over_gens_for_branch, mu, n_markers)
+    indels_for_each_branch <- rbindlist(indels_for_each_branch)
+    indels_for_each_branch$parent <- d$parent
+    indels_for_each_branch$node <- d$node
+    tips <- d$label[d$isTip==T]
 
-        if(length(current_node) > 0) {
-            ## get the samples on either side of the bifurcation
-            split <- d$node[d$parent %in% current_node]
-            get_samples <- function(node, map) {
-                which(map[[paste0('n',node)]]==1)
-            }
-            split <- lapply(split, get_samples, map)
 
-            ## get the new levels to add to the matrix
-            current_level <- max(gm)
-            new_levels <- current_level + 1:length(split)
+    ## get the path from the normal to the tip. This includes an extra node for the added normal which we should drop.
+    get_node_path_to_normal <- function(to, from, tree, d) {
+        node_path_to_normal <- ape::nodepath(tree, from=which(tree$tip.label==from), to=which(tree$tip.label==to))
+        node_path_to_normal[node_path_to_normal %in% c(d$parent,d$node[d$label==to])]
+    }
+    path_to_normal <- lapply(tips, get_node_path_to_normal, 'normal', tree, d)
+    names(path_to_normal) <- tips
 
-            ## update the levels from this generation onward 
-            for(this.level in 1:length(new_levels)) {
-                gm[g:nrow(gm),split[[this.level]]] <- new_levels[this.level]
-            }
+
+    ## extract the indels encountered along each branch on the path from the normal to the tip.
+    get_indels_for_path <- function(v, indels_for_each_branch) {
+        len <- length(v)-1
+        f <- function(i, v, indels_for_each_branch) {
+            from <- v[i]; to <- v[i+1]
+            indels <- indels_for_each_branch[parent==from & node==to,] 
+            indels
         }
+        indels_along_path <- rbindlist(lapply(1:len, f, v, indels_for_each_branch))
+        indels_along_path    
     }
+    indels_along_path_to_normal <- lapply(path_to_normal, get_indels_for_path, indels_for_each_branch)
+    ## for QC:
+    #indels_along_path_to_normal$M2[,100:118]
+    #indels_along_path_to_normal$M1[,100:118]
+    #indels_along_path_to_normal$P1
+    #indels_along_path_to_normal$P2    
 
-    #browser()
-    ## generate a random normal genotype
-    normal <- sample(10:25,replace=T,size=n_markers*2)
 
-    ## gt is the genotype matrix
-    gt <- matrix(nrow=n_samples,ncol=n_markers*2)
-    for(i in 1:nrow(gt)) gt[i,] <- normal #gt[is.na(gt)] <- 0
-    rownames(gt) <- colnames(gm)
-
-    simulate_mutations_in_levels_for_gen <- function(n_levels, n_markers, mu) {
-        tmp <- matrix(nrow=n_levels,ncol=n_markers*2)
-        tmp[is.na(tmp)] <- 0
-        tmp <- rcpp_mutate_length_matrix(tmp, mu, 1)
-        tmp
+    ## for each tip, now combine the indels encountered by summing them over each branch.
+    combine_indels_for_each_tip <- function(indels) {
+        indels <- indels[,grep('^V[0-9]*',names(indels)),with=F]
+        indels <- colSums(indels)     
+        as.list(indels)
     }
+    indels <- lapply(indels_along_path_to_normal, combine_indels_for_each_tip)
+    out <- rbindlist(indels)
+    out <- as.matrix(out)
+    rownames(out) <- names(indels)
 
-    limit <- n_gens - 1
-    for(g in 1:limit) {
-        #message(g)
-        levels <- as.integer(gm[g,])
-        unique_levels <- unique(levels)
-        nl <- length(unique_levels)
-        tmp <- simulate_mutations_in_levels_for_gen(nl, n_markers, mu)
-        i <- 1
-        for(i in 1:nl) { 
-            lev <- unique_levels[i]
-            affected_samples <- which(levels==lev)
-            for(sa in affected_samples) {
-                gt[sa,] <- gt[sa,] + tmp[i,]    
-            }
-        } 
-    }
-    rm(sa)
+    
+    ## add the normal without any indels back in
+    toadd <- matrix(nrow=1,ncol=ncol(out))
+    toadd[is.na(toadd)] <- 0
+    out <- rbind(out, toadd)
+    rownames(out)[nrow(out)] <- 'normal'
+    out
+}
 
-    ## add the normal to the last row
-    gt <- rbind(gt, normal)
-    #browser()
 
-    ## collapse the genotypes to a mean marker length (in tumor) for each sample
-    row_to_mean_length <- function(x) {
-        n_markers <- length(x) / 2
-        x1 <- x[1:n_markers]
-        x2 <- x[(n_markers+1):length(x)]
-        mu <- (x1 + x2)/2 
-        mu
-    }
-    gt <- t(apply(gt, 1, row_to_mean_length))
-
+##' get_purities
+##' @export
+get_purities <- function(tree, beta1=2, beta2=2) {
     ## randomly generate tumor purities
+    samples <- tree$tip.label
+    n_samples <- length(samples)
     purities <- matrix(ncol=1,nrow=n_samples)
-    purities[,1] <- rbeta(n=n_samples, shape1=beta_params[1], shape2=beta_params[2])
+    purities[,1] <- rbeta(n=n_samples, shape1=beta1, shape2=beta2)
     rownames(purities) <- samples
     colnames(purities) <- 'purity'
+    purities['normal',1] <- 0
+    purities
+}
 
-    ## create 'observed' genotype data, which is the underlying tumor marker lengths scaled by their purities. This can be treated as the observed difference in mean-marker-lengths from the normal.
-    gt_obs <- copy(gt)
-    normal <- as.numeric(gt_obs['normal',])
-    for(sa in samples) gt_obs[sa,] <- ( gt[sa,] * purities[sa,1] ) + (normal * (1 - purities[sa,1]))
-    rm(sa)
 
-    gt_obs_centered <- copy(gt_obs)
-    marker_min_meanlengths <- apply(gt_obs_centered, 2, min)
-    for(mi in 1:n_markers) {
-        gt_obs_centered[,mi] <- gt_obs_centered[,mi] - marker_min_meanlengths[mi]
+##' get_observed_data
+##' @export
+get_observed_data <- function(gt, purities=NULL, sd.technical.error=0) {
+    ## create 'admixed' genotype data, which is the underlying tumor marker lengths scaled by their purities. 
+    ## This can be treated as the admixed difference in mean-marker-lengths from the normal.
+
+    if(!is.null(purities)) {
+        tumors <- rownames(gt)
+        n_markers <- ncol(gt)
+        normal <- as.numeric(gt['normal',])
+        for(sa in tumors) gt[sa,] <- ( gt[sa,] * purities[sa,1] ) + (normal * (1 - purities[sa,1]))
     }
-    rm(mi)
 
-    params <- list(n_samples=n_samples, n_gens=n_gens, n_cells=gens$final_cells, extinctions=gens$n_extinctions, n_samples_is_average=n_samples_is_average,  starting_cells=starting_cells, s=s, k=k, max_gens=max_gens, max_cells=max_cells, n_markers=n_markers, mu=mu) 
+    marker_min_meanlengths <- apply(gt, 2, min)
+    for(mi in 1:n_markers) {
+        gt[,mi] <- gt[,mi] - marker_min_meanlengths[mi]
+    }
+   
+    ## add noise after admixing the mean lengths according to the sample purities
+    if(sd.technical.error > 0) for(i in 1:nrow(gt)) gt[i,] <- gt[i,] + rnorm(mean=0,sd=sd.technical.error,n=ncol(gt))
+    gt
+}
 
-    list(tree=tree, gt=gt, gt_obs=gt_obs, gt_obs_centered=gt_obs_centered, purities=purities, gm=gm, map=map, params=params)
+
+##' random_generations
+##' @export
+random_generations <- function(starting_cells=1, bdratio=1.01, max_gens=1e4, max_cells=1e12) { 
+    ## use birth-date discrete time branch process to simulate a number of cell divisions for cancer to reach 10^12 cells
+    n_cells <- starting_cells
+    gen = 0
+    n_extinctions <- 0
+    death_prob <- 1/(bdratio+1)
+    
+    while(gen < max_gens & n_cells < max_cells) {
+        dead_cells <- rbinom(n=1,size=n_cells,prob=death_prob)
+        remaining_cells <- n_cells - dead_cells        
+        if(remaining_cells > 0) {
+            n_cells <- remaining_cells * 2
+            gen <- gen+1
+        } else {
+            gen <- 0
+            n_cells <- 1
+            n_extinctions <- n_extinctions + 1
+            dead_cells <- 0
+            remaining_cells <- 0
+        }
+    }
+    
+    list(generations=gen, final_cells=n_cells, n_extinctions=n_extinctions)
+}
+
+
+##' get_genotypes
+##' @export
+get_genotypes <- function(indels, normal, first_cancer_cell) {
+
+    clones <- rownames(indels)[rownames(indels)!='normal']
+    n_clones <- length(clones)
+    nc <- ncol(indels)
+
+    ## gt is the genotype matrix, each tumor starts with 1st cancer cell
+    gt <- matrix(nrow=n_clones,ncol=nc)
+    for(i in 1:nrow(gt)) gt[i,] <- as.integer(first_cancer_cell)
+    rownames(gt) <- clones
+    gt <- rbind(gt, normal)
+    rownames(gt)[nrow(gt)] <- 'normal'
+
+    ## add the indels encountered to each clone's original genotype
+    gt <- gt + indels
+    gt
 }
 
 
@@ -280,8 +307,107 @@ get_angular_distance_matrix <- function(d) {
 }
 
 
-##' load_marker_files
+##' plot_simulated_tree
 ##' @export
+plot_simulated_tree <- function(tree,title=NA,purities=NULL) {
+    if(!is.rooted(tree)) tree <- phytools::reroot(tree, node.number=which(tree$tip.label=='normal'))
+    groups <- data.table(label=tree$tip.label)
+    groups[grep('^P',label),group:='Primary']
+    groups[grep('^M',label),group:='Metastasis']
+    groups[grepl('N1',label) | grepl('normal',label),group:='Normal']
+    groups$group <- factor(groups$group,levels=c('Normal','Primary','Metastasis'))
+
+    if(!is.null(purities)) {
+        toadd <- data.table(label=rownames(purities),purity=purities[,1])
+        groups <- merge(groups, toadd, by='label', all.x=T)
+        groups[group=='Normal',purity:=NA]
+    }
+    tree$tip.label[tree$tip.label=='normal'] <- 'N1'
+    groups[label=='normal',label:='N1']
+    cols <- c('#008c45','#fab31d','black')
+    names(cols) <- c('Primary','Metastasis','Normal')
+    p <- ggtree(tree,layout='ape') %<+% groups
+    p <- p + geom_tiplab(aes(color=group),angle=0) +
+        ang::theme_ang(base_size=12) +
+        theme(legend.position='right',
+              axis.line=element_blank(),axis.text=element_blank(),axis.ticks=element_blank()) + 
+        scale_color_manual(values=cols,name='Tissue')
+    if(!is.null(purities)) {
+        p <- p + geom_tippoint(aes(fill=purity),pch=21,size=2,stroke=0.25)
+        p <- p + scale_fill_gradient2(low='blue',mid='white',high='red',na.value='black',midpoint=0.5,name='Purity',limits=c(0,1)) 
+    }
+    if(!is.na(title)) p <- p + ggtitle(title)
+    p 
+}
+
+
+##' plot the chronology
+##' @export
+plot_chronology <- function(tree,title,purities,max_gens) {
+    groups <- data.table(label=tree$tip.label)
+    groups[grep('^P',label),group:='Primary']
+    groups[grep('^M',label),group:='Metastasis']
+    groups[grep('normal',label),group:='Normal']
+    groups$group <- factor(groups$group,levels=c('Normal','Primary','Metastasis'))
+    toadd <- data.table(label=rownames(purities),purity=purities[,1])
+    groups <- merge(groups, toadd, by='label', all.x=T)
+    groups[group=='Normal',purity:=NA]
+    
+    groups[group=='Normal',label:='N1']
+    tree$tip.label[tree$tip.label=='normal'] <- 'N1'
+    cols <- c('#008c45','#fab31d','black')
+    names(cols) <- c('Primary','Metastasis','Normal')
+
+    p <- ggtree(tree,layout='rect') %<+% groups
+    p$data$label <- paste0(' ',p$data$label)
+    p$data$x <- max_gens * p$data$x / max(p$data$x)
+    p <- p + ang::theme_ang(base_size=12) + geom_tiplab(aes(color=group),angle=0)
+    p$data$node_lab <- as.character(NA)
+    p$data$node_lab[p$data$isTip==F & p$data$x < 0.98*max_gens] <- round(p$data$x[p$data$isTip==F & p$data$x < 0.98*max_gens])
+    p <- p + geom_text(aes(label=node_lab),angle=0,size=3,color='blue',hjust=-0.1)
+    p <- p + geom_tippoint(aes(fill=purity),pch=21,size=2,stroke=0.25)
+    p <- p + scale_fill_gradient2(low='blue',mid='white',high='red',na.value='black',midpoint=0.5,name='Purity',limits=c(0,1)) 
+    p <- p + theme(legend.position='right', axis.line.y=element_blank(),axis.text.y=element_blank(),axis.ticks.y=element_blank()) 
+    p <- p + scale_color_manual(values=cols,name='Tissue')
+    p <- p + ggplot2::labs(x='% of generations from 1st cancer cell')
+    p <- p + ggplot2::ggtitle(title)
+    p 
+}
+
+
+##' get_mean_marker_length_matrix
+##' @export
+get_mean_marker_length_matrix <- function(gt,n_markers) {
+    f <- function(x,n_markers) {
+        max_ploidy <- length(x) / n_markers        
+        mat <- matrix(x, nrow=max_ploidy, ncol=n_markers, byrow=T)    
+        mean_lengths <- colMeans(mat,na.rm=T)
+        mean_lengths
+    }
+    tmp <- t(apply(gt, 1, f, n_markers))
+    tmp
+}
+
+
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# functions to potentially move out/delete
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+##' get_ovoid_dimensions
+get_ovoid_dimensions <- function(n_cells) { 
+    longest_dimension_cm <- get_longest_dimension(n_cells)
+    volume_cm3 <- get_volume(longest_dimension_cm)
+    surface_area_cm2 <- get_surface_area(longest_dimension_cm)
+    cells_per_cm2 <- 215443.5
+    n_cells_on_surface <- surface_area_cm2 * cells_per_cm2
+    list(longest_dimension_cm=longest_dimension_cm, volume_cm3=volume_cm3, 
+         surface_area_cm2=surface_area_cm2, n_cells_on_surface=n_cells_on_surface)
+}
+
+
+##' load_marker_files
 load_marker_files <- function(marker_dir,return_mean_length=T) {
     polyg_dir <- dir(marker_dir,full.names=T)
     get_lengths <- function(i, polyg_dir) {
@@ -317,111 +443,5 @@ load_marker_files <- function(marker_dir,return_mean_length=T) {
     }
     d
 }
-
-##' group_samples
-##' @export
-group_samples <- function(input,lun=T,liv=T,per=T,primary_autopsy_is_distant=T,highlight_peritoneum_when_multi=T,color=F) {
-    if(any(c('data.frame','matrix') %in% class(input))) {
-        barcodes <- rownames(input)
-    } else if('character' %in% class(input)) {
-        barcodes <- input
-    }
-    info <- parse_barcode(barcodes)    
-    info[grepl('^N[0-9]',barcode) | grepl('^Normal[0-9]',barcode),group:='Normal']
-    info[grepl('^P[0-9]',barcode) | grepl('^PT[0-9]',barcode) | grepl('^PT[a-z][0-9]',barcode),group:='Primary']
-    info[grepl('^L[0-9]',barcode) | grepl('^LN[0-9]',barcode) | grepl('^TD[0-9]',barcode),group:='Locoregional']
-    info[grepl('^Lun[0-9]',barcode),group:='Lung']
-    info[grepl('^Liv[0-9]',barcode),group:='Liver']
-    #info[grepl('^Ad[0-9]',barcode) | grepl('^AD[0-9]',barcode),group:='Adenoma']
-    info[grepl('^Per[0-9]',barcode) | grepl('^Di[0-9]',barcode) | grepl('^Om[0-9]',barcode) | grepl('^PerOv[0-9]',barcode),group:='Peritoneum']
-    info[is.na(group),group:='Distant (other)']
-
-    if(lun==F) info[group=='Lung',group:='Distant (other)']
-    if(liv==F) info[group=='Liver',group:='Distant (other)']
-    if(per==F) info[group=='Peritoneum',group:='Distant (other)']
-    #if(tumor_deposit_with_lymph==F) info[grepl('^TD[0-9]',barcode),group:='Tumor deposit']
-    if(primary_autopsy_is_distant==T) info[group=='Primary' & autopsy==T,group:='Distant (other)']
-    out <- info[,c('barcode','group'),with=F]
-   
-    if(highlight_peritoneum_when_multi) {
-        ## default coloring showing all major types, but highlighting peritoneum
-        out[group=='Normal',color:='black']
-        out[group=='Primary',color:='#008c45']
-        out[group=='Locoregional',color:='#eb5b2b']
-        out[group=='Liver',color:='#4c86c6']
-        out[group=='Lung',color:='#ea6a8c']
-        out[group=='Peritoneum',color:='#fab31d']
-        out[group=='Distant (other)',color:='#534797']    
-    } else {
-        ## default coloring showing all major types, but highlighting lung
-        out[group=='Normal',color:='black']
-        out[group=='Primary',color:='#008c45']
-        out[group=='Locoregional',color:='#eb5b2b']
-        out[group=='Liver',color:='#4c86c6']
-        out[group=='Peritoneum',color:='#ea6a8c'] ## find alternative?
-        out[group=='Lung',color:='#fab31d']
-        out[group=='Distant (other)',color:='#534797']    
-    }
-
-    ## depending on which were included in input argumens, highlight single type
-    if(lun==T & liv==F & per==F) {
-        out[group=='Lung',color:='#fab31d']
-        out[group %in% 'Distant (other)',color:='#4c86c6']
-
-    } else if(lun==F & liv==T & per==F) {
-        out[group=='Liver',color:='#fab31d']
-        out[group %in% 'Distant (other)',color:='#4c86c6']
-
-    } else if(lun==F & liv==F & per==T) {
-        out[group=='Peritoneum',oolor:='#fab31d']
-        out[group %in% 'Distant (other)',color:='#4c86c6']
-    }
-    if(color==F) out[,color:=NULL]
-    
-    as.data.frame(out)
-}
-
-
-##' parse_barcode
-##' @export
-parse_barcode <- function(barcodes) {
-    ## extract the main tissue type, lesion, and sample number from each sample's barcode
-    .parse_barcode <- function(barcode) {
-        str <- strsplit(gsub("([A-Za-z]*)([0-9]*)([A-Za-z]*)", "\\1 \\2 \\3", barcode), " ")[[1]]
-        list(barcode=barcode,type=str[1],lesion=str[2],sample=str[3])
-    }
-    s <- rbindlist(lapply(barcodes, .parse_barcode))
-    s[is.na(sample),sample:='']
-    s[grepl('-A$',barcode),autopsy:=T]
-    s[!grepl('-A$',barcode),autopsy:=F]
-    s$sample <- gsub('-A$','',s$sample)
-    s
-}
-
-##' write_distance_matrix
-##' @export
-write_distance_matrix <- function (dm_df, filepath) {
-    write.table(dm_df, file = filepath, sep = "\t", quote = FALSE,
-                col.names = NA)
-}
-
-##' read_distance_matrix
-##' @export
-read_distance_matrix <- function (file, return.as.matrix = T) {
-    distance_matrix <- fread(file)
-    rows <- distance_matrix[[1]]
-    distance_matrix <- distance_matrix[, (2:ncol(distance_matrix)),
-        with = F]
-    m <- as.matrix(distance_matrix)
-    rownames(m) <- rows
-    if (return.as.matrix == F) {
-        as.dist(m, diag = T)
-    }
-    else {
-        m
-    }
-}
-
-
 
 

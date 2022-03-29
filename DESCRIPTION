@@ -1,7 +1,7 @@
 Package: chronoloG
 Type: Package
 Title: Simulate random multi-sample coalescence trees and corresponding poly-guanine genotypes.
-Version: 0.1
+Version: 0.1.1
 Date: 2022-03-09
 Author: Alexander Gorelick
 Maintainer: Alexander Gorelick <agorelick@mgh.harvard.edu>

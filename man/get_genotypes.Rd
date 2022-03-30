@@ -4,7 +4,7 @@
 \alias{get_genotypes}
 \title{get_genotypes}
 \usage{
-get_genotypes(indels, normal, first_cancer_cell)
+get_genotypes(indels, n_markers, gens_until_first_cancer_cell)
 }
 \description{
 get_genotypes

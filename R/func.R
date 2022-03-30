@@ -195,18 +195,91 @@ get_indels_for_tree <- function(tree,max_gens,mu,n_markers) {
 }
 
 
-##' get_purities
+##' get_mixing_proportions
 ##' @export
-get_purities <- function(tree, beta1=2, beta2=2) {
-    ## randomly generate tumor purities
+get_mixing_proportions <- function(pc,uniform_mixing=F) {
+
+    get_sample_mixture <- function(s, pc, uniform_mixing) {
+        ## for each sample, take the non-normal fraction and split it over the tumor samples
+
+        samples <- rownames(pc)
+        nonself_samples <- samples[!samples %in% c('normal',s)]
+
+        prop_normal <- 1 - pc[s,'purity']
+        prop_cancer <- 1 - prop_normal
+        clonality <- pc[s,'clonality']
+        prop_self <- clonality * prop_cancer
+        prop_others <- prop_cancer - prop_self
+
+        if(uniform_mixing==F) {
+            tmp <- runif(0,1,n=length(nonself_samples))
+            prop_others <- prop_others * tmp / sum(tmp)
+        } else {
+            prop_others <- prop_others / length(nonself_samples)
+            prop_others <- rep(prop_others, length(nonself_samples))
+        }
+
+        out_samples <- c('normal',s,nonself_samples)   
+        props <- c(prop_normal, prop_self, prop_others)
+        out <- data.table(sample=out_samples, prop=props)
+        out$self <- s
+        out$clonality <- clonality
+        out$prop_cancer <- prop_cancer
+        out <- out[!(sample=='normal' & prop==0),]
+        out
+    }
+    pc['normal','clonality'] <- 0
+    samples <- rownames(pc)
+    l <- lapply(samples, get_sample_mixture, pc, uniform_mixing)
+    d <- rbindlist(l) 
+    out <- dcast( self + prop_cancer + clonality ~ sample, value.var='prop', data=d)
+    setnames(out,'prop_cancer','purity')
+    out
+}
+
+
+##' plot_mixtures
+##' @export
+plot_mixtures <- function(x,title='') {
+    if(nrow(x) > 9) stop('Only works for at most 8 tumors + 1 normal')
+    x <- x[order(purity,decreasing=F),]
+    pd <- x[self!='normal']
+    self_levels <- pd$self
+    sample_levels <- (c('normal',pd$self))
+    pd <- melt(pd, id.vars=c('self','purity','clonality'))
+    pd$self <- factor(pd$self, levels=self_levels)
+    pd$variable <- factor(pd$variable,levels=sample_levels)
+    cols <- c('white',brewer.pal(nrow(x)-1, 'Accent'))
+    names(cols) <- sample_levels
+    label_data <- data.table(self=x$self, value=x$purity)
+    label_data$self <- factor(label_data$self, levels=self_levels)
+    label_data <- label_data[!is.na(self),]
+    label_data$label <- paste0(prettyNum(100*label_data$value, digits=2),'%')
+    p <- ggplot(pd, aes(x=self,y=value)) +
+        scale_y_continuous(expand=c(0,0)) + 
+        geom_bar(stat='identity',aes(fill=variable),color='black',size=0.25) +
+        geom_text(data=label_data,aes(label=label),vjust=-0.15,size=3) +
+        scale_fill_manual(values=cols,name='Origin') +
+        ang::theme_ang(base_size=12) +
+        labs(x='Sample',y='Mixture proportion', subtitle=title)
+    p
+}
+
+ 
+##' get_purity_and_clonality
+##' @export
+get_purity_and_clonality <- function(tree, purity_shape1=2, purity_shape2=2, clonality_min=0.5, clonality_max=0.95) {
     samples <- tree$tip.label
     n_samples <- length(samples)
-    purities <- matrix(ncol=1,nrow=n_samples)
-    purities[,1] <- rbeta(n=n_samples, shape1=beta1, shape2=beta2)
-    rownames(purities) <- samples
-    colnames(purities) <- 'purity'
-    purities['normal',1] <- 0
-    purities
+
+    ## randomly generate tumor purities and clonalities
+    purities <- rbeta(n=n_samples, shape1=purity_shape1, shape2=purity_shape2)
+    clonalities <- runif(n=n_samples, min=clonality_min, max=clonality_max)
+    out <- data.frame(purity=purities, clonality=clonalities) 
+    rownames(out) <- samples
+    out['normal','purity'] <- 0
+    out['normal','clonality'] <- 0
+    out
 }
 
 
@@ -359,15 +432,15 @@ plot_simulated_tree <- function(tree,title=NA,purities=NULL) {
 
 ##' plot the chronology
 ##' @export
-plot_chronology <- function(tree,title,purities,max_gens) {
+plot_chronology <- function(tree,title,max_gens) {
     groups <- data.table(label=tree$tip.label)
     groups[grep('^P',label),group:='Primary']
     groups[grep('^M',label),group:='Metastasis']
     groups[grep('normal',label),group:='Normal']
     groups$group <- factor(groups$group,levels=c('Normal','Primary','Metastasis'))
-    toadd <- data.table(label=rownames(purities),purity=purities[,1])
-    groups <- merge(groups, toadd, by='label', all.x=T)
-    groups[group=='Normal',purity:=NA]
+    #toadd <- cbind(label=rownames(purities),as.data.table(purities))
+    #groups <- merge(groups, toadd, by='label', all.x=T)
+    #groups[group=='Normal',purity:=NA]
     
     groups[group=='Normal',label:='N1']
     tree$tip.label[tree$tip.label=='normal'] <- 'N1'
@@ -381,9 +454,9 @@ plot_chronology <- function(tree,title,purities,max_gens) {
     p$data$node_lab <- as.character(NA)
     p$data$node_lab[p$data$isTip==F & p$data$x < 0.98*max_gens] <- round(p$data$x[p$data$isTip==F & p$data$x < 0.98*max_gens])
     p <- p + geom_text(aes(label=node_lab),angle=0,size=3,color='blue',hjust=-0.1)
-    p <- p + geom_tippoint(aes(fill=purity),pch=21,size=2,stroke=0.25)
-    p <- p + scale_fill_gradient2(low='blue',mid='white',high='red',na.value='black',midpoint=0.5,name='Purity',limits=c(0,1)) 
-    p <- p + theme(legend.position='right', axis.line.y=element_blank(),axis.text.y=element_blank(),axis.ticks.y=element_blank()) 
+    #p <- p + geom_tippoint(aes(fill=purity),pch=21,size=2,stroke=0.25)
+    #p <- p + scale_fill_gradient2(low='blue',mid='white',high='red',na.value='black',midpoint=0.5,name='Purity',limits=c(0,1)) 
+    p <- p + theme(legend.position='none', axis.line.y=element_blank(),axis.text.y=element_blank(),axis.ticks.y=element_blank()) 
     p <- p + scale_color_manual(values=cols,name='Tissue')
     p <- p + ggplot2::labs(x='% of generations from 1st cancer cell')
     p <- p + ggplot2::ggtitle(title)

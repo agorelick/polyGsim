@@ -4,7 +4,7 @@
 \alias{plot_chronology}
 \title{plot the chronology}
 \usage{
-plot_chronology(tree, title, purities, max_gens)
+plot_chronology(tree, title, max_gens)
 }
 \description{
 plot the chronology

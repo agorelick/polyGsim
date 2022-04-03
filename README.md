@@ -39,3 +39,20 @@ plot_chronology(tree,'Simulated clone/metastasis evolution',max_gens)
 **Fig 2.** Simulated temporal evolution of clones and monoclonal metastases from the first cancer cell. The total number of generations (span of x-axis) is derived from a discrete-time birth-death branching process with ratio of birth-rate to death-rate (bdratio) = 1.01. Branch lengths correspond to exactly number of cell divisions (coalescence times labeled in blue). Primary tumor samples labeled in green (P1-4), metastases in gold (M1-4), normal (germline) in black (N).
 
 ---
+
+```r
+## Get allele-specific lengths for each poly-G marker in each clone given indels and CNAs.
+## Then plot a heatmap of the marker lengths for each copy in each clone/met.
+## Here we use an indel-rate of 1e-4 indels/marker/cell division (with equally likely insertions and deletions).
+## We similarly use SCNA rate of 1e-4 copy number deletions or duplications/marker/cell division (at most 4 copies allowed)
+gt <- get_genotypes_with_cnas(tree, 
+                              n_markers=58, 
+                              mu.indel=1e-4, 
+                              mu.cna=1e-4,
+                              gens_until_first_cancer_cell=1e4)
+plot_genotypes(gt)
+```
+
+<p align="center"> <img src="https://github.com/agorelick/polyGsim/blob/main/figures/wiki/fig3.png" width="700" /> </p>
+
+**Fig 3.** Simulated genotypes (poly-guanine repeat lengths) for each allelic copy in each sample. Note that Normal always has only 2 copies (diploid). Grey regions have missing values, either due to copy number deletions (in copies 1, 2) or due to no duplication (in copies 3, 4). Each marker has a 50% probability of having copy number alterations early (i.e. after first cancer cell but *before subsequent indels* in all clones) or late (after first cancer cell and *after subsequent indels* in all clones).

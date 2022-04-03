@@ -22,5 +22,5 @@ tree <- get_clone_tree(n_primary_clones=n_primary_clones,
 plot(tree) ## Fig 1
 ```
 
-![](https://github.com/agorelick/polyGsim/blob/main/figures/wiki/fig1.png =x250)
-Fig 1. A random phylogeny of primary tumor clones and monoclonal metastases. Specified parameters: Exactly 4 primary clones, each with prob=0.2 of seeding observed metastases, where an average of 3 monoclonal metastases are associated with each met-seeding primary tumor clone.
+<p align="center"> <img src="https://github.com/agorelick/polyGsim/blob/main/figures/wiki/fig1.png" width="500" height="500" /> </p>
+**Fig 1.** A random phylogeny of primary tumor clones and monoclonal metastases. Specified parameters: Exactly 4 primary clones, each with prob=0.2 of seeding observed metastases, where an average of 3 monoclonal metastases are associated with each met-seeding primary tumor clone.

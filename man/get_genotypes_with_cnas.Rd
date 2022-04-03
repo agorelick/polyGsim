@@ -9,7 +9,8 @@ get_genotypes_with_cnas(
   n_markers,
   mu.indel,
   mu.cna,
-  gens_until_first_cancer_cell
+  gens_until_first_cancer_cell,
+  prop_markers_with_early_cnas = 0.5
 )
 }
 \description{

@@ -1,7 +1,7 @@
-Package: chronoloG
+Package: polyGsim
 Type: Package
-Title: Simulate chronological evolution of clones/metastases within a cancer, along with corresponding poly-guanine genotypes.
-Version: 0.1.2
+Title: Simulate chronological evolution of clones/metastases within a cancer, along with corresponding poly-guanine genotypes, angular distance and trees.
+Version: 0.1.3
 Date: 2022-03-09
 Author: Alexander Gorelick
 Maintainer: Alexander Gorelick <agorelick@mgh.harvard.edu>

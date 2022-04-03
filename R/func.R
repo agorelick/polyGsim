@@ -195,7 +195,7 @@ get_indels_for_tree <- function(tree,max_gens,mu,n_markers,max_ploidy=4) {
 
 ##' get_genotypes_with_cnas
 ##' @export
-get_genotypes_with_cnas <- function(tree, n_markers, mu.indel, mu.cna, gens_until_first_cancer_cell) {
+get_genotypes_with_cnas <- function(tree, n_markers, mu.indel, mu.cna, gens_until_first_cancer_cell, prop_markers_with_early_cnas=0.5) {
 
     clones <- tree$tip.label[tree$tip.label!='normal']
     n_clones <- length(clones)
@@ -259,9 +259,9 @@ get_genotypes_with_cnas <- function(tree, n_markers, mu.indel, mu.cna, gens_unti
     # randomly pick some markers from the early SCNAs and others from late SCNAs
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    ## split the markers into those that had early WGD and others that had late WGD
+    ## split the markers into those that had early SCNAs and others that had late SCNAs
     all_markers <- colnames(gt_early_scnas)
-    early_markers <- seq(1:n_markers)[rbinom(size=1,n=n_markers,p=0.5)==1]
+    early_markers <- seq(1:n_markers)[rbinom(size=1,n=n_markers,p=prop_markers_with_early_cnas)==1]
     early_markers <- c(paste0('m',early_markers,'.1'), paste0('m',early_markers,'.2'), paste0('m',early_markers,'.3'), paste0('m',early_markers,'.4'))
     late_markers <- all_markers[!all_markers %in% early_markers]
 
@@ -360,6 +360,41 @@ get_purity_and_clonality <- function(tree, purity_shape1=2, purity_shape2=2, clo
     out['normal','purity'] <- 0
     out['normal','clonality'] <- 0
     out
+}
+
+
+##' get_mean_marker_lengths
+##' @export
+get_mean_marker_lengths <- function(gt, mix, n_markers) {
+
+    get_mean_lengths_per_sample <- function(s, samples, gt, x) { 
+        ## get admixed observed genotypes based on purity, clonality, and copy number alterations
+        props <- as.matrix(x[,(samples),with=F])
+        rownames(props) <- x$self
+        props <- props[s,]
+        props <- data.table(gt=names(props), prop=props) 
+        tmp <- cbind(gt=rownames(gt), as.data.table(gt))
+        tmp <- merge(props, tmp, by='gt', all=T)
+        tmp <- melt(tmp, id.vars=c('gt','prop'))
+        tmp <- tmp[!is.na(value),]
+        f <- function(s) strsplit(s,'[.]')[[1]][1]
+        tmp$marker <- sapply(as.character(tmp$variable), f)
+        collapse <- function(tmp) {
+            mu <- sum(tmp$value * tmp$prop) / sum(tmp$prop)
+            list(mu=mu)
+        }
+        res <- tmp[,collapse(.SD),by=c('marker')]
+        res$sample <- s
+        res
+    }
+    samples <- rownames(gt)
+    l <- lapply(samples, get_mean_lengths_per_sample, samples, gt, mix)
+    l <- rbindlist(l)
+    l <- dcast(sample ~ marker, value.var='mu', data=l)
+    markers <- paste0('m',1:n_markers)
+    l <- l[,c('sample',markers),with=F]
+    l <- ang::d2m(l)
+    l
 }
 
 

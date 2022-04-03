@@ -4,7 +4,7 @@
 \alias{get_indels_for_tree}
 \title{get_indels_for_tree}
 \usage{
-get_indels_for_tree(tree, max_gens, mu, n_markers)
+get_indels_for_tree(tree, max_gens, mu, n_markers, max_ploidy = 4)
 }
 \description{
 get_indels_for_tree

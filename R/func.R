@@ -120,7 +120,7 @@ get_clone_tree <- function(n_primary_clones, n_is_avg=F, met_prob_per_clone=0.2,
 
 ##' get_indels_for_tree
 ##' @export
-get_indels_for_tree <- function(tree,max_gens,mu,n_markers) { 
+get_indels_for_tree <- function(tree,max_gens,mu,n_markers,max_ploidy=4) { 
 
     ## extract tree data
     d <- as.data.table(ggtree(tree)$data)
@@ -134,12 +134,12 @@ get_indels_for_tree <- function(tree,max_gens,mu,n_markers) {
 
 
     ## for each branch, run simulations for the according number of generations.
-    simulate_indels_over_gens_for_branch <- function(gens,mu,n_markers) {
-        gt_0 <- t(as.matrix(rep(0,n_markers*2))) ## initial genotype for each branch
+    simulate_indels_over_gens_for_branch <- function(gens,mu,n_markers,max_ploidy) {
+        gt_0 <- t(as.matrix(rep(0,n_markers*max_ploidy))) ## initial genotype for each branch
         gt_T <- rcpp_mutate_length_matrix(gt_0, mu, gens)
         out <- as.list(gt_T[1,])
     }
-    indels_for_each_branch <- lapply(d$gens_to_run, simulate_indels_over_gens_for_branch, mu, n_markers)
+    indels_for_each_branch <- lapply(d$gens_to_run, simulate_indels_over_gens_for_branch, mu, n_markers,max_ploidy)
     indels_for_each_branch <- rbindlist(indels_for_each_branch)
     indels_for_each_branch$parent <- d$parent
     indels_for_each_branch$node <- d$node
@@ -167,12 +167,6 @@ get_indels_for_tree <- function(tree,max_gens,mu,n_markers) {
         indels_along_path    
     }
     indels_along_path_to_normal <- lapply(path_to_normal, get_indels_for_path, indels_for_each_branch)
-    ## for QC:
-    #indels_along_path_to_normal$M2[,100:118]
-    #indels_along_path_to_normal$M1[,100:118]
-    #indels_along_path_to_normal$P1
-    #indels_along_path_to_normal$P2    
-
 
     ## for each tip, now combine the indels encountered by summing them over each branch.
     combine_indels_for_each_tip <- function(indels) {
@@ -184,15 +178,101 @@ get_indels_for_tree <- function(tree,max_gens,mu,n_markers) {
     out <- rbindlist(indels)
     out <- as.matrix(out)
     rownames(out) <- names(indels)
-
     
     ## add the normal without any indels back in
     toadd <- matrix(nrow=1,ncol=ncol(out))
-    toadd[is.na(toadd)] <- 0
+    toadd[1,1:(n_markers*2)] <- 0
     out <- rbind(out, toadd)
     rownames(out)[nrow(out)] <- 'normal'
+
+    ## add marker names
+    n <- expand.grid(marker=seq(1,n_markers),copy=seq(1,max_ploidy))
+    n$label <- paste0('m',n$marker,'.',n$copy)
+    colnames(out) <- n$label
     out
 }
+
+
+##' get_genotypes_with_cnas
+##' @export
+get_genotypes_with_cnas <- function(tree, n_markers, mu.indel, mu.cna, gens_until_first_cancer_cell) {
+
+    clones <- tree$tip.label[tree$tip.label!='normal']
+    n_clones <- length(clones)
+    marker_names <- c(paste0('m',1:n_markers,'.1'), paste0('m',1:n_markers,'.2'))
+
+    ## normal is the average germline
+    normal <- t(as.matrix(sample(10:25,replace=T,size=n_markers*2)))
+    colnames(normal) <- marker_names
+
+    ## ancestor is based on the germline after large number of divisions, and an early WGD event
+    first_cancer_cell <- rcpp_mutate_length_matrix(copy(normal), mu.indel, gens=gens_until_first_cancer_cell)
+    colnames(first_cancer_cell) <- marker_names
+
+    ## get scnas for diploid (-1 = deletion of that copy, +1 = duplication of that copy)
+    scnas <- get_indels_for_tree(tree, max_gens, mu.cna, n_markers, max_ploidy=2)
+    scnas[scnas < -1] <- -1     
+    scnas[scnas > 1] <- 1     
+
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # genotypes for early SCNAs. SCNAs first, then indels
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    ## get length for each marker (diploid) in each sample with indels
+    nc <- ncol(normal)
+    gt_early_scnas <- matrix(nrow=n_clones,ncol=nc)
+    for(i in 1:nrow(gt_early_scnas)) gt_early_scnas[i,] <- as.integer(first_cancer_cell)
+    rownames(gt_early_scnas) <- clones
+    gt_early_scnas <- rbind(gt_early_scnas, normal)
+    rownames(gt_early_scnas)[nrow(gt_early_scnas)] <- 'normal'
+
+    ## add copy number deletions to gt, then add in the duplications, then finally introduce indels
+    gt_early_scnas[scnas==-1] <- NA
+    dups <- copy(gt_early_scnas)
+    dups[scnas!=1] <- NA
+    gt_early_scnas <- cbind(gt_early_scnas, dups)
+    indels <- get_indels_for_tree(tree, max_gens, mu.indel, n_markers, max_ploidy=4) 
+    colnames(gt_early_scnas) <- colnames(indels)
+    gt_early_scnas <- gt_early_scnas + indels
+
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # genotypes for lates SCNAs: indels first, then SCNAs
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    nc <- ncol(normal)
+    gt_late_scnas <- matrix(nrow=n_clones,ncol=nc)
+    for(i in 1:nrow(gt_late_scnas)) gt_late_scnas[i,] <- as.integer(first_cancer_cell)
+    rownames(gt_late_scnas) <- clones
+    gt_late_scnas <- rbind(gt_late_scnas, normal)
+    rownames(gt_late_scnas)[nrow(gt_late_scnas)] <- 'normal'
+    indels <- get_indels_for_tree(tree, max_gens, mu.indel, n_markers, max_ploidy=2) 
+    gt_late_scnas <- gt_late_scnas + indels
+    gt_late_scnas[scnas==-1] <- NA
+
+    ## add copy number deletions to gt, then add in the duplications, then finally introduce indels
+    dups <- copy(gt_late_scnas)
+    dups[scnas!=1] <- NA
+    gt_late_scnas <- cbind(gt_late_scnas, dups)
+    colnames(gt_late_scnas) <- colnames(gt_early_scnas)
+
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # randomly pick some markers from the early SCNAs and others from late SCNAs
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    ## split the markers into those that had early WGD and others that had late WGD
+    all_markers <- colnames(gt_early_scnas)
+    early_markers <- seq(1:n_markers)[rbinom(size=1,n=n_markers,p=0.5)==1]
+    early_markers <- c(paste0('m',early_markers,'.1'), paste0('m',early_markers,'.2'), paste0('m',early_markers,'.3'), paste0('m',early_markers,'.4'))
+    late_markers <- all_markers[!all_markers %in% early_markers]
+
+    gt_with_cnvs <- cbind(gt_early_scnas[,early_markers], gt_late_scnas[,late_markers])
+    gt_with_cnvs <- gt_with_cnvs[,all_markers]
+    gt_with_cnvs
+}
+
+
+
+
 
 
 ##' get_mixing_proportions
@@ -476,6 +556,36 @@ get_mean_marker_length_matrix <- function(gt,n_markers) {
     tmp <- t(apply(gt, 1, f, n_markers))
     tmp
 }
+
+
+##' plot_genotypes
+##' @export
+plot_genotypes <- function(gt) {
+    ## plot the true (unknowable) genotypes
+
+    x <- as.data.table(gt)
+    x$clone <- rownames(gt)
+    x <- melt(x, id.vars='clone')
+    f=function(s) {
+        s <- strsplit(s,'[.]')[[1]]
+        list(marker=s[1],copy=as.integer(s[2]))
+    }
+    markers <- rbindlist(lapply(as.character(x$variable), f))
+    x <- cbind(x, markers)
+    x$copy <- factor(x$copy, levels=1:4)
+    x$clone <- factor(x$clone, levels=rev(rownames(gt)))
+    x$marker <- factor(x$marker, levels=unique(x$marker))
+    p <- ggplot(x, aes(x=marker, y=clone)) +
+        geom_tile(data=x[is.na(value),], aes(fill=value)) + 
+        geom_tile(data=x[!is.na(value),],aes(fill=value),color='black',size=0.25) + 
+        scale_fill_gradient2(low='blue',mid='white',high='red',
+                             midpoint=round(median(x$value,na.rm=T))) +
+        facet_wrap(facets=~copy, ncol=1) +
+        ang::theme_ang(base_size=12) +
+        theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5))
+    p
+}
+
 
 
 

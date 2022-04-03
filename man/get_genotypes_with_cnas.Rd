@@ -6,6 +6,7 @@
 \usage{
 get_genotypes_with_cnas(
   tree,
+  max_gens,
   n_markers,
   mu.indel,
   mu.cna,

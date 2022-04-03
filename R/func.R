@@ -1,40 +1,3 @@
-##' get_genotypes
-##' @export
-get_genotypes <- function(indels, n_markers, gens_until_first_cancer_cell) {
-
-    get_marker_lengths <- function(indels, normal, first_cancer_cell) {
-        ## get genotypes (marker lengths) for each clone and marker-copy
-
-        clones <- rownames(indels)[rownames(indels)!='normal']
-        n_clones <- length(clones)
-        nc <- ncol(indels)
-
-        ## gt is the genotype matrix, each tumor starts with 1st cancer cell
-        gt <- matrix(nrow=n_clones,ncol=nc)
-        for(i in 1:nrow(gt)) gt[i,] <- as.integer(first_cancer_cell)
-        rownames(gt) <- clones
-        gt <- rbind(gt, normal)
-        rownames(gt)[nrow(gt)] <- 'normal'
-
-        ## add the indels encountered to each clone's original genotype
-        gt <- gt + indels
-        gt
-    }
-
-    ## normal is the average germline
-    normal <- t(as.matrix(sample(10:25,replace=T,size=n_markers*2)))
-
-    ## FCC is based on the germline after large number of divisions
-    first_cancer_cell <- rcpp_mutate_length_matrix(copy(normal), mu, gens=gens_until_first_cancer_cell)
-
-    ## simulate marker lengths
-    marker_lengths <- get_marker_lengths(indels, normal, first_cancer_cell)
-
-    ## get mean marker lengths for the pure clones and mets
-    gt <- get_mean_marker_length_matrix(marker_lengths, n_markers)
-    gt
-}
-
 
 ##' sim_chronology
 ##' @export
@@ -195,7 +158,7 @@ get_indels_for_tree <- function(tree,max_gens,mu,n_markers,max_ploidy=4) {
 
 ##' get_genotypes_with_cnas
 ##' @export
-get_genotypes_with_cnas <- function(tree, n_markers, mu.indel, mu.cna, gens_until_first_cancer_cell, prop_markers_with_early_cnas=0.5) {
+get_genotypes_with_cnas <- function(tree, max_gens, n_markers, mu.indel, mu.cna, gens_until_first_cancer_cell, prop_markers_with_early_cnas=0.5) {
 
     clones <- tree$tip.label[tree$tip.label!='normal']
     n_clones <- length(clones)
@@ -553,9 +516,6 @@ plot_chronology <- function(tree,title,max_gens) {
     groups[grep('^M',label),group:='Metastasis']
     groups[grep('normal',label),group:='Normal']
     groups$group <- factor(groups$group,levels=c('Normal','Primary','Metastasis'))
-    #toadd <- cbind(label=rownames(purities),as.data.table(purities))
-    #groups <- merge(groups, toadd, by='label', all.x=T)
-    #groups[group=='Normal',purity:=NA]
     
     groups[group=='Normal',label:='N1']
     tree$tip.label[tree$tip.label=='normal'] <- 'N1'
@@ -569,11 +529,9 @@ plot_chronology <- function(tree,title,max_gens) {
     p$data$node_lab <- as.character(NA)
     p$data$node_lab[p$data$isTip==F & p$data$x < 0.98*max_gens] <- round(p$data$x[p$data$isTip==F & p$data$x < 0.98*max_gens])
     p <- p + geom_text(aes(label=node_lab),angle=0,size=3,color='blue',hjust=-0.1)
-    #p <- p + geom_tippoint(aes(fill=purity),pch=21,size=2,stroke=0.25)
-    #p <- p + scale_fill_gradient2(low='blue',mid='white',high='red',na.value='black',midpoint=0.5,name='Purity',limits=c(0,1)) 
     p <- p + theme(legend.position='none', axis.line.y=element_blank(),axis.text.y=element_blank(),axis.ticks.y=element_blank()) 
     p <- p + scale_color_manual(values=cols,name='Tissue')
-    p <- p + ggplot2::labs(x='% of generations from 1st cancer cell')
+    p <- p + ggplot2::labs(x='Generations from 1st cancer cell')
     p <- p + ggplot2::ggtitle(title)
     p 
 }
@@ -607,20 +565,22 @@ plot_genotypes <- function(gt) {
     }
     markers <- rbindlist(lapply(as.character(x$variable), f))
     x <- cbind(x, markers)
-    x$copy <- factor(x$copy, levels=1:4)
+    x$copy <- paste('copy',x$copy)
+    x$copy <- factor(x$copy, levels=paste0('copy ',1:4))
     x$clone <- factor(x$clone, levels=rev(rownames(gt)))
     x$marker <- factor(x$marker, levels=unique(x$marker))
     p <- ggplot(x, aes(x=marker, y=clone)) +
+        scale_x_discrete(expand=c(0,0)) +
+        scale_y_discrete(expand=c(0,0)) +
         geom_tile(data=x[is.na(value),], aes(fill=value)) + 
         geom_tile(data=x[!is.na(value),],aes(fill=value),color='black',size=0.25) + 
         scale_fill_gradient2(low='blue',mid='white',high='red',
-                             midpoint=round(median(x$value,na.rm=T))) +
+                             midpoint=round(median(x$value,na.rm=T)),name='Poly-G length (bp)') +
         facet_wrap(facets=~copy, ncol=1) +
-        ang::theme_ang(base_size=12) +
+        ang::theme_ang(base_size=10) +
         theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5))
     p
 }
-
 
 
 

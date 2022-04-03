@@ -7,7 +7,6 @@ exportPattern("^[[:alpha:]]+")
 
 export(get_angular_distance_matrix)
 export(get_clone_tree)
-export(get_genotypes)
 export(get_genotypes_with_cnas)
 export(get_indels_for_tree)
 export(get_mean_marker_length_matrix)
@@ -21,6 +20,3 @@ export(plot_mixtures)
 export(plot_simulated_tree)
 export(random_generations)
 export(sim_chronology)
-
-
-

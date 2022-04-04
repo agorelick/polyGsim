@@ -99,3 +99,42 @@ m10 21.57530 21.43931 21.86346 20.53065 21.20625 20.64819 21.23451 21.66870   22
 ```
 
 **Table 1.** The mean length of the first 10 poly-G markers in each simulated tumor sample. Mean lengths are calculated fron the genotypes and number of copies of each marker in each cell population, and the proportion of their contribution to the admixed simulated sample. Note, in this example, marker m2 had no indels in any clone/met during the cancer evolution. This is evident in Fig 3, where the only variant in m2 is a copy-number deletion in P3 (which does not affect the mean marker length without any indels).
+
+---
+
+For an example of the mean-marker-length calculation, consider marker 'm3' in clone 'P4' above. The proportion of each cell population admixed in a sample for P4 is as follows:
+```r
+R> props <- mix['P4',4:12]; props
+            M1          M2          M3          M4          P1          P2          P3        P4
+1: 0.006561195 0.006561195 0.006561195 0.006561195 0.006561195 0.006561195 0.006561195 0.1837135
+      normal
+1: 0.7703582
+```
+
+The length of each copy of marker m3 in each sample is:
+```r
+R> lengths <- gt[names(props),grep('^m3[.]',colnames(gt))]; lengths
+       m3.1 m3.2 m3.3 m3.4
+M1       17   14   NA   14
+M2       17   14   NA   14
+M3       17   14   NA   14
+M4       17   15   NA   15
+P1       17   14   17   NA
+P2       17   14   NA   14
+P3       17   14   NA   14
+P4       18   14   18   NA
+normal   17   14   NA   NA
+```
+We calculate the average length of marker m3 as follows. The numerator is the total length across the copies of m3 in each clone, multiplied by its proportion in the admixture, then summed. The denominator is the number of copies of m3 in each clone, multipled by its proportion, then summed:
+```r
+R> sum(props * rowSums(lengths,na.rm=T)) / sum(props * rowSums(!is.na(lengths)))
+[1] 15.7722
+```
+This matches the mean length for m3 in sample P4 calculated above:
+```r
+R> mu['P4','m3']
+[1] 15.7722
+
+```
+
+

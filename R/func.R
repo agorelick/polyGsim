@@ -1,40 +1,78 @@
-
-##' sim_chronology
+##' get_normal_genotype
 ##' @export
-sim_chronology <- function(n_clones,n_is_avg=T,ancestor='normal') {  
-    ## pick a random number of clones with the given average lambda
-    if(n_is_avg) n_clones <- rpois(1,lambda=n_clones)
+get_normal_genotype <- function(n_markers) {
+    marker_names <- c(paste0('m',1:n_markers,'.1'), paste0('m',1:n_markers,'.2'))
 
-    ## random tree toplogy
-    clones <- paste0('s',1:n_clones)
-    tree <- rtree(n_clones, tip.label=clones)
+    ## normal is the average germline
+    normal <- t(as.matrix(sample(10:25,replace=T,size=n_markers*2)))
+    colnames(normal) <- marker_names
 
-    ## randomly decide a length for the initial tumor branch (from a normal distribution fit to the internal branch lengths)
-    branch_lengths <- tree$edge.length
-    log10_branch_lengths <- log10(branch_lengths)
-    mu <- mean(log10_branch_lengths)
-    s <- sd(log10_branch_lengths)
-    edge.length <- 10^rnorm(mean=mu,sd=s,n=1)
-    where <- length(tree$tip.label) + 1 ## where place normal branch (rcoal always puts the normal at length(tree)+1)
+    normal
+}
 
-    ## add the normal branch to the tree    
-    if(is.null(where)) where<-length(tree$tip)+1
-    tip<-list(edge=matrix(c(2,1),1,2),
-              tip.label=ancestor,
-              edge.length=edge.length,
-              Nnode=1)
-    class(tip)<-"phylo"
-    tree2 <- bind.tree(tree,tip,where=where)
 
-    ## root the tree at the normal
-    tree2 <- phytools::reroot(tree2, node.number=which(tree2$tip.label==ancestor))
-    return(tree2)
+##' random_generations
+##' @export
+random_generations <- function(starting_cells=1, bdratio=1.01, max_gens=1e4, max_cells=1e12) { 
+    ## use birth-date discrete time branch process to simulate a number of cell divisions for cancer to reach 10^12 cells
+    n_cells <- starting_cells
+    gen = 0
+    n_extinctions <- 0
+    death_prob <- 1/(bdratio+1)
+    
+    while(gen < max_gens & n_cells < max_cells) {
+        dead_cells <- rbinom(n=1,size=n_cells,prob=death_prob)
+        remaining_cells <- n_cells - dead_cells        
+        if(remaining_cells > 0) {
+            n_cells <- remaining_cells * 2
+            gen <- gen+1
+        } else {
+            gen <- 0
+            n_cells <- 1
+            n_extinctions <- n_extinctions + 1
+            dead_cells <- 0
+            remaining_cells <- 0
+        }
+    }
+    
+    list(generations=gen, final_cells=n_cells, n_extinctions=n_extinctions)
 }
 
 
 ##' get_clone_tree
 ##' @export
 get_clone_tree <- function(n_primary_clones, n_is_avg=F, met_prob_per_clone=0.2, avg_mets_per_clone=4) { 
+
+    random_chronology <- function(n_clones,n_is_avg=T,ancestor='normal') {  
+        ## pick a random number of clones with the given average lambda
+        if(n_is_avg) n_clones <- rpois(1,lambda=n_clones)
+
+        ## random tree toplogy
+        clones <- paste0('s',1:n_clones)
+        tree <- rtree(n_clones, tip.label=clones)
+
+        ## randomly decide a length for the initial tumor branch (from a log-normal distribution fit to the internal branch lengths)
+        branch_lengths <- tree$edge.length
+        log10_branch_lengths <- log10(branch_lengths)
+        mu <- mean(log10_branch_lengths)
+        s <- sd(log10_branch_lengths)
+        edge.length <- 10^rnorm(mean=mu,sd=s,n=1)
+        where <- length(tree$tip.label) + 1 ## where to place normal branch
+
+        ## add the normal branch to the tree    
+        if(is.null(where)) where<-length(tree$tip)+1
+        tip<-list(edge=matrix(c(2,1),1,2),
+                  tip.label=ancestor,
+                  edge.length=edge.length,
+                  Nnode=1)
+        class(tip)<-"phylo"
+        tree2 <- bind.tree(tree,tip,where=where)
+
+        ## root the tree at the normal
+        tree2 <- phytools::reroot(tree2, node.number=which(tree2$tip.label==ancestor))
+        return(tree2)
+    }
+
 
     if(n_is_avg==T) {
         n_primary_clones <- rpois(lambda=n_primary_clones,n=1)
@@ -45,7 +83,7 @@ get_clone_tree <- function(n_primary_clones, n_is_avg=F, met_prob_per_clone=0.2,
     n_met_clones <- rbinom(size=n_primary_clones,n=1,prob=met_prob_per_clone)
     if(n_met_clones==0) n_met_clones <- 1
     n_clones <- n_primary_clones + n_met_clones ## this is PT clones + seeding-clones
-    ptree <- sim_chronology(n_clones,n_is_avg=F)
+    ptree <- random_chronology(n_clones,n_is_avg=F)
     ptree$tip.label <- gsub('s','P',ptree$tip.label)
 
     ## for each met-seeding clone, get a new random tree of mets, then bind it on 
@@ -81,9 +119,38 @@ get_clone_tree <- function(n_primary_clones, n_is_avg=F, met_prob_per_clone=0.2,
 }
 
 
+##' plot_chronology
+##' @export
+plot_chronology <- function(tree,title,max_gens) {
+    groups <- data.table(label=tree$tip.label)
+    groups[grep('^P',label),group:='Primary']
+    groups[grep('^M',label),group:='Metastasis']
+    groups[grep('normal',label),group:='Normal']
+    groups$group <- factor(groups$group,levels=c('Normal','Primary','Metastasis'))
+    groups[group=='Normal',label:='N1']
+    tree$tip.label[tree$tip.label=='normal'] <- 'N1'
+    cols <- c('#008c45','#fab31d','black')
+    names(cols) <- c('Primary','Metastasis','Normal')
+
+    p <- ggtree(tree,layout='rect') %<+% groups
+    p$data$label <- paste0(' ',p$data$label)
+    p$data$x <- max_gens * p$data$x / max(p$data$x)
+    p <- p + ang::theme_ang(base_size=12) + geom_tiplab(aes(color=group),angle=0)
+    p$data$node_lab <- as.character(NA)
+    p$data$node_lab[p$data$isTip==F & p$data$x < 0.98*max_gens] <- round(p$data$x[p$data$isTip==F & p$data$x < 0.98*max_gens])
+    p <- p + geom_text(aes(label=node_lab),angle=0,size=3,color='blue',hjust=-0.1)
+    p <- p + theme(legend.position='none', axis.line.y=element_blank(),axis.text.y=element_blank(),axis.ticks.y=element_blank()) 
+    p <- p + scale_color_manual(values=cols,name='Tissue')
+    p <- p + ggplot2::labs(x='Generations from 1st cancer cell')
+    p <- p + ggplot2::ggtitle(title)
+    p 
+}
+
+
+
 ##' get_indels_for_tree
 ##' @export
-get_indels_for_tree <- function(tree,max_gens,mu,n_markers,max_ploidy=4) { 
+get_indels_for_tree <- function(tree,max_gens,mu,n_markers,max_ploidy=2) { 
 
     ## extract tree data
     d <- as.data.table(ggtree(tree)$data)
@@ -94,7 +161,6 @@ get_indels_for_tree <- function(tree,max_gens,mu,n_markers,max_ploidy=4) {
     d$gen_time <- round(xpos * max_gens)
     d$gens_to_run <- c(0,diff(d$gen_time))
     d <- d[gens_to_run > 0,]
-
 
     ## for each branch, run simulations for the according number of generations.
     simulate_indels_over_gens_for_branch <- function(gens,mu,n_markers,max_ploidy) {
@@ -108,7 +174,6 @@ get_indels_for_tree <- function(tree,max_gens,mu,n_markers,max_ploidy=4) {
     indels_for_each_branch$node <- d$node
     tips <- d$label[d$isTip==T]
 
-
     ## get the path from the normal to the tip. This includes an extra node for the added normal which we should drop.
     get_node_path_to_normal <- function(to, from, tree, d) {
         node_path_to_normal <- ape::nodepath(tree, from=which(tree$tip.label==from), to=which(tree$tip.label==to))
@@ -116,7 +181,6 @@ get_indels_for_tree <- function(tree,max_gens,mu,n_markers,max_ploidy=4) {
     }
     path_to_normal <- lapply(tips, get_node_path_to_normal, 'normal', tree, d)
     names(path_to_normal) <- tips
-
 
     ## extract the indels encountered along each branch on the path from the normal to the tip.
     get_indels_for_path <- function(v, indels_for_each_branch) {
@@ -156,86 +220,41 @@ get_indels_for_tree <- function(tree,max_gens,mu,n_markers,max_ploidy=4) {
 }
 
 
-##' get_genotypes_with_cnas
+##' get_clone_genotypes
 ##' @export
-get_genotypes_with_cnas <- function(tree, max_gens, n_markers, mu.indel, mu.cna, gens_until_first_cancer_cell, prop_markers_with_early_cnas=0.5) {
-
-    clones <- tree$tip.label[tree$tip.label!='normal']
+get_clone_genotypes <- function(indels, normal) { 
+    clones <- rownames(indels)[rownames(indels)!='normal']
     n_clones <- length(clones)
-    marker_names <- c(paste0('m',1:n_markers,'.1'), paste0('m',1:n_markers,'.2'))
+    nc <- ncol(indels)
 
-    ## normal is the average germline
-    normal <- t(as.matrix(sample(10:25,replace=T,size=n_markers*2)))
-    colnames(normal) <- marker_names
+    ## gt is the genotype matrix, each tumor starts with 1st cancer cell
+    gt <- matrix(nrow=n_clones,ncol=nc)
+    for(i in 1:nrow(gt)) gt[i,] <- as.integer(normal)
+    rownames(gt) <- clones
+    gt <- rbind(gt, normal)
+    rownames(gt)[nrow(gt)] <- 'normal'
 
-    ## ancestor is based on the germline after large number of divisions, and an early WGD event
-    first_cancer_cell <- rcpp_mutate_length_matrix(copy(normal), mu.indel, gens=gens_until_first_cancer_cell)
-    colnames(first_cancer_cell) <- marker_names
-
-    ## get scnas for diploid (-1 = deletion of that copy, +1 = duplication of that copy)
-    scnas <- get_indels_for_tree(tree, max_gens, mu.cna, n_markers, max_ploidy=2)
-    scnas[scnas < -1] <- -1     
-    scnas[scnas > 1] <- 1     
-
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # genotypes for early SCNAs. SCNAs first, then indels
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-    ## get length for each marker (diploid) in each sample with indels
-    nc <- ncol(normal)
-    gt_early_scnas <- matrix(nrow=n_clones,ncol=nc)
-    for(i in 1:nrow(gt_early_scnas)) gt_early_scnas[i,] <- as.integer(first_cancer_cell)
-    rownames(gt_early_scnas) <- clones
-    gt_early_scnas <- rbind(gt_early_scnas, normal)
-    rownames(gt_early_scnas)[nrow(gt_early_scnas)] <- 'normal'
-
-    ## add copy number deletions to gt, then add in the duplications, then finally introduce indels
-    gt_early_scnas[scnas==-1] <- NA
-    dups <- copy(gt_early_scnas)
-    dups[scnas!=1] <- NA
-    gt_early_scnas <- cbind(gt_early_scnas, dups)
-    indels <- get_indels_for_tree(tree, max_gens, mu.indel, n_markers, max_ploidy=4) 
-    colnames(gt_early_scnas) <- colnames(indels)
-    gt_early_scnas <- gt_early_scnas + indels
-
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # genotypes for lates SCNAs: indels first, then SCNAs
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-    nc <- ncol(normal)
-    gt_late_scnas <- matrix(nrow=n_clones,ncol=nc)
-    for(i in 1:nrow(gt_late_scnas)) gt_late_scnas[i,] <- as.integer(first_cancer_cell)
-    rownames(gt_late_scnas) <- clones
-    gt_late_scnas <- rbind(gt_late_scnas, normal)
-    rownames(gt_late_scnas)[nrow(gt_late_scnas)] <- 'normal'
-    indels <- get_indels_for_tree(tree, max_gens, mu.indel, n_markers, max_ploidy=2) 
-    gt_late_scnas <- gt_late_scnas + indels
-    gt_late_scnas[scnas==-1] <- NA
-
-    ## add copy number deletions to gt, then add in the duplications, then finally introduce indels
-    dups <- copy(gt_late_scnas)
-    dups[scnas!=1] <- NA
-    gt_late_scnas <- cbind(gt_late_scnas, dups)
-    colnames(gt_late_scnas) <- colnames(gt_early_scnas)
-
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # randomly pick some markers from the early SCNAs and others from late SCNAs
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-    ## split the markers into those that had early SCNAs and others that had late SCNAs
-    all_markers <- colnames(gt_early_scnas)
-    early_markers <- seq(1:n_markers)[rbinom(size=1,n=n_markers,p=prop_markers_with_early_cnas)==1]
-    early_markers <- c(paste0('m',early_markers,'.1'), paste0('m',early_markers,'.2'), paste0('m',early_markers,'.3'), paste0('m',early_markers,'.4'))
-    late_markers <- all_markers[!all_markers %in% early_markers]
-
-    gt_with_cnvs <- cbind(gt_early_scnas[,early_markers], gt_late_scnas[,late_markers])
-    gt_with_cnvs <- gt_with_cnvs[,all_markers]
-    gt_with_cnvs
+    ## add the indels encountered to each clone's original genotype
+    gt <- gt + indels
+    gt
 }
 
 
+##' get_purity_and_clonality
+##' @export
+get_purity_and_clonality <- function(tree, purity_shape1=2, purity_shape2=2, clonality_min=0.5, clonality_max=0.95) {
+    samples <- tree$tip.label
+    n_samples <- length(samples)
 
-
+    ## randomly generate tumor purities and clonalities
+    purities <- rbeta(n=n_samples, shape1=purity_shape1, shape2=purity_shape2)
+    clonalities <- runif(n=n_samples, min=clonality_min, max=clonality_max)
+    out <- data.frame(purity=purities, clonality=clonalities) 
+    rownames(out) <- samples
+    out['normal','purity'] <- 0
+    out['normal','clonality'] <- 0
+    out
+}
 
 
 ##' get_mixing_proportions
@@ -309,26 +328,10 @@ plot_mixtures <- function(x,title='') {
 }
 
  
-##' get_purity_and_clonality
-##' @export
-get_purity_and_clonality <- function(tree, purity_shape1=2, purity_shape2=2, clonality_min=0.5, clonality_max=0.95) {
-    samples <- tree$tip.label
-    n_samples <- length(samples)
-
-    ## randomly generate tumor purities and clonalities
-    purities <- rbeta(n=n_samples, shape1=purity_shape1, shape2=purity_shape2)
-    clonalities <- runif(n=n_samples, min=clonality_min, max=clonality_max)
-    out <- data.frame(purity=purities, clonality=clonalities) 
-    rownames(out) <- samples
-    out['normal','purity'] <- 0
-    out['normal','clonality'] <- 0
-    out
-}
-
 
 ##' get_mean_marker_lengths
 ##' @export
-get_mean_marker_lengths <- function(gt, mix, n_markers) {
+get_mean_marker_lengths <- function(gt, mix, n_markers, anonymize=T) {
 
     get_mean_lengths_per_sample <- function(s, samples, gt, x) { 
         ## get admixed observed genotypes based on purity, clonality, and copy number alterations
@@ -357,59 +360,18 @@ get_mean_marker_lengths <- function(gt, mix, n_markers) {
     markers <- paste0('m',1:n_markers)
     l <- l[,c('sample',markers),with=F]
     l <- ang::d2m(l)
-    l
-}
 
-
-##' get_observed_data
-##' @export
-get_observed_data <- function(gt, purities=NULL, sd.technical.error=0) {
-    ## create 'admixed' genotype data, which is the underlying tumor marker lengths scaled by their purities. 
-    ## This can be treated as the admixed difference in mean-marker-lengths from the normal.
-
-    if(!is.null(purities)) {
-        tumors <- rownames(gt)
-        n_markers <- ncol(gt)
-        normal <- as.numeric(gt['normal',])
-        for(sa in tumors) gt[sa,] <- ( gt[sa,] * purities[sa,1] ) + (normal * (1 - purities[sa,1]))
-    }
-
-    marker_min_meanlengths <- apply(gt, 2, min)
-    for(mi in 1:n_markers) {
-        gt[,mi] <- gt[,mi] - marker_min_meanlengths[mi]
-    }
-   
-    ## add noise after admixing the mean lengths according to the sample purities
-    if(sd.technical.error > 0) for(i in 1:nrow(gt)) gt[i,] <- gt[i,] + rnorm(mean=0,sd=sd.technical.error,n=ncol(gt))
-    gt
-}
-
-
-##' random_generations
-##' @export
-random_generations <- function(starting_cells=1, bdratio=1.01, max_gens=1e4, max_cells=1e12) { 
-    ## use birth-date discrete time branch process to simulate a number of cell divisions for cancer to reach 10^12 cells
-    n_cells <- starting_cells
-    gen = 0
-    n_extinctions <- 0
-    death_prob <- 1/(bdratio+1)
-    
-    while(gen < max_gens & n_cells < max_cells) {
-        dead_cells <- rbinom(n=1,size=n_cells,prob=death_prob)
-        remaining_cells <- n_cells - dead_cells        
-        if(remaining_cells > 0) {
-            n_cells <- remaining_cells * 2
-            gen <- gen+1
-        } else {
-            gen <- 0
-            n_cells <- 1
-            n_extinctions <- n_extinctions + 1
-            dead_cells <- 0
-            remaining_cells <- 0
+    ## anonymize by subtracting the minimum length for each marker 
+    get_anonymized_marker_lengths <- function(gt) {
+        marker_min_meanlengths <- apply(gt, 2, min)
+        for (mi in 1:n_markers) {
+            gt[, mi] <- gt[, mi] - marker_min_meanlengths[mi]
         }
+        gt
     }
-    
-    list(generations=gen, final_cells=n_cells, n_extinctions=n_extinctions)
+    if(anonymize==T)  l <- get_anonymized_marker_lengths(l)
+
+    l
 }
 
 
@@ -476,7 +438,7 @@ get_angular_distance_matrix <- function(d) {
 
 ##' plot_simulated_tree
 ##' @export
-plot_simulated_tree <- function(tree,title=NA,purities=NULL) {
+plot_simulated_tree <- function(tree,layout='ape',title=NA,purities=NULL) {
     if(!is.rooted(tree)) tree <- phytools::reroot(tree, node.number=which(tree$tip.label=='normal'))
     groups <- data.table(label=tree$tip.label)
     groups[grep('^P',label),group:='Primary']
@@ -493,7 +455,7 @@ plot_simulated_tree <- function(tree,title=NA,purities=NULL) {
     groups[label=='normal',label:='N1']
     cols <- c('#008c45','#fab31d','black')
     names(cols) <- c('Primary','Metastasis','Normal')
-    p <- ggtree(tree,layout='ape') %<+% groups
+    p <- ggtree(tree,layout=layout) %<+% groups
     p <- p + geom_tiplab(aes(color=group),angle=0) +
         ang::theme_ang(base_size=12) +
         theme(legend.position='right',
@@ -504,35 +466,6 @@ plot_simulated_tree <- function(tree,title=NA,purities=NULL) {
         p <- p + scale_fill_gradient2(low='blue',mid='white',high='red',na.value='black',midpoint=0.5,name='Purity',limits=c(0,1)) 
     }
     if(!is.na(title)) p <- p + ggtitle(title)
-    p 
-}
-
-
-##' plot the chronology
-##' @export
-plot_chronology <- function(tree,title,max_gens) {
-    groups <- data.table(label=tree$tip.label)
-    groups[grep('^P',label),group:='Primary']
-    groups[grep('^M',label),group:='Metastasis']
-    groups[grep('normal',label),group:='Normal']
-    groups$group <- factor(groups$group,levels=c('Normal','Primary','Metastasis'))
-    
-    groups[group=='Normal',label:='N1']
-    tree$tip.label[tree$tip.label=='normal'] <- 'N1'
-    cols <- c('#008c45','#fab31d','black')
-    names(cols) <- c('Primary','Metastasis','Normal')
-
-    p <- ggtree(tree,layout='rect') %<+% groups
-    p$data$label <- paste0(' ',p$data$label)
-    p$data$x <- max_gens * p$data$x / max(p$data$x)
-    p <- p + ang::theme_ang(base_size=12) + geom_tiplab(aes(color=group),angle=0)
-    p$data$node_lab <- as.character(NA)
-    p$data$node_lab[p$data$isTip==F & p$data$x < 0.98*max_gens] <- round(p$data$x[p$data$isTip==F & p$data$x < 0.98*max_gens])
-    p <- p + geom_text(aes(label=node_lab),angle=0,size=3,color='blue',hjust=-0.1)
-    p <- p + theme(legend.position='none', axis.line.y=element_blank(),axis.text.y=element_blank(),axis.ticks.y=element_blank()) 
-    p <- p + scale_color_manual(values=cols,name='Tissue')
-    p <- p + ggplot2::labs(x='Generations from 1st cancer cell')
-    p <- p + ggplot2::ggtitle(title)
     p 
 }
 
@@ -548,38 +481,6 @@ get_mean_marker_length_matrix <- function(gt,n_markers) {
     }
     tmp <- t(apply(gt, 1, f, n_markers))
     tmp
-}
-
-
-##' plot_genotypes
-##' @export
-plot_genotypes <- function(gt) {
-    ## plot the true (unknowable) genotypes
-
-    x <- as.data.table(gt)
-    x$clone <- rownames(gt)
-    x <- melt(x, id.vars='clone')
-    f=function(s) {
-        s <- strsplit(s,'[.]')[[1]]
-        list(marker=s[1],copy=as.integer(s[2]))
-    }
-    markers <- rbindlist(lapply(as.character(x$variable), f))
-    x <- cbind(x, markers)
-    x$copy <- paste('copy',x$copy)
-    x$copy <- factor(x$copy, levels=paste0('copy ',1:4))
-    x$clone <- factor(x$clone, levels=rev(rownames(gt)))
-    x$marker <- factor(x$marker, levels=unique(x$marker))
-    p <- ggplot(x, aes(x=marker, y=clone)) +
-        scale_x_discrete(expand=c(0,0)) +
-        scale_y_discrete(expand=c(0,0)) +
-        geom_tile(data=x[is.na(value),], aes(fill=value)) + 
-        geom_tile(data=x[!is.na(value),],aes(fill=value),color='black',size=0.25) + 
-        scale_fill_gradient2(low='blue',mid='white',high='red',
-                             midpoint=round(median(x$value,na.rm=T)),name='Poly-G length (bp)') +
-        facet_wrap(facets=~copy, ncol=1) +
-        ang::theme_ang(base_size=10) +
-        theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5))
-    p
 }
 
 
@@ -636,6 +537,139 @@ load_marker_files <- function(marker_dir,return_mean_length=T) {
         d <- copy(l)
     }
     d
+}
+
+
+##' get_genotypes_with_cnas
+get_genotypes_with_cnas <- function(tree, max_gens, n_markers, mu.indel, mu.cna, gens_until_first_cancer_cell, prop_markers_with_early_cnas=0.5) {
+    ## DOES NOT WORK YET!!
+
+    clones <- tree$tip.label[tree$tip.label!='normal']
+    n_clones <- length(clones)
+    marker_names <- c(paste0('m',1:n_markers,'.1'), paste0('m',1:n_markers,'.2'))
+
+    ## normal is the average germline
+    normal <- t(as.matrix(sample(10:25,replace=T,size=n_markers*2)))
+    colnames(normal) <- marker_names
+
+    ## ancestor is based on the germline after large number of divisions, and an early WGD event
+    first_cancer_cell <- rcpp_mutate_length_matrix(copy(normal), mu.indel, gens=gens_until_first_cancer_cell)
+    colnames(first_cancer_cell) <- marker_names
+
+
+    indels <- get_indels_for_tree(tree, max_gens, mu.indel, n_markers, max_ploidy=4) 
+
+    ## get scnas for diploid (-1 = deletion of that copy, +1 = duplication of that copy)
+    scnas <- get_indels_for_tree(tree, max_gens, mu.cna, n_markers, max_ploidy=2)
+    scnas[scnas < -1] <- -1     
+    scnas[scnas > 1] <- 1     
+
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # genotypes for early SCNAs. SCNAs first, then indels
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    ## get length for each marker (diploid) in each sample with indels
+    nc <- ncol(normal)
+    gt_early_scnas <- matrix(nrow=n_clones,ncol=nc)
+    for(i in 1:nrow(gt_early_scnas)) gt_early_scnas[i,] <- as.integer(first_cancer_cell)
+    rownames(gt_early_scnas) <- clones
+    gt_early_scnas <- rbind(gt_early_scnas, normal)
+    rownames(gt_early_scnas)[nrow(gt_early_scnas)] <- 'normal'
+
+    ## add copy number deletions to gt, then add in the duplications, then finally introduce indels
+    gt_early_scnas[scnas==-1] <- NA
+    dups <- copy(gt_early_scnas)
+    dups[scnas!=1] <- NA
+    gt_early_scnas <- cbind(gt_early_scnas, dups)
+    colnames(gt_early_scnas) <- colnames(indels)
+    gt_early_scnas <- gt_early_scnas + indels
+
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # genotypes for lates SCNAs: indels first, then SCNAs
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    nc <- ncol(normal)
+    gt_late_scnas <- matrix(nrow=n_clones,ncol=nc)
+    for(i in 1:nrow(gt_late_scnas)) gt_late_scnas[i,] <- as.integer(first_cancer_cell)
+    rownames(gt_late_scnas) <- clones
+    gt_late_scnas <- rbind(gt_late_scnas, normal)
+    rownames(gt_late_scnas)[nrow(gt_late_scnas)] <- 'normal'
+    gt_late_scnas <- gt_late_scnas + indels[,1:(n_markers*2)]
+    gt_late_scnas[scnas==-1] <- NA
+
+    ## add copy number deletions to gt, then add in the duplications, then finally introduce indels
+    dups <- copy(gt_late_scnas)
+    dups[scnas!=1] <- NA
+    gt_late_scnas <- cbind(gt_late_scnas, dups)
+    colnames(gt_late_scnas) <- colnames(gt_early_scnas)
+
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # randomly pick some markers from the early SCNAs and others from late SCNAs
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    ## split the markers into those that had early SCNAs and others that had late SCNAs
+    all_markers <- colnames(gt_early_scnas)
+    early_markers <- seq(1:n_markers)[rbinom(size=1,n=n_markers,p=prop_markers_with_early_cnas)==1]
+    early_markers <- c(paste0('m',early_markers,'.1'), paste0('m',early_markers,'.2'), paste0('m',early_markers,'.3'), paste0('m',early_markers,'.4'))
+    late_markers <- all_markers[!all_markers %in% early_markers]
+
+    gt_with_cnvs <- cbind(gt_early_scnas[,early_markers], gt_late_scnas[,late_markers])
+    gt_with_cnvs <- gt_with_cnvs[,all_markers]
+    gt_with_cnvs
+}
+
+
+##' plot_genotypes_with_cnas
+plot_genotypes_with_cnas <- function(gt) {
+    ## plot the true (unknowable) genotypes
+
+    x <- as.data.table(gt)
+    x$clone <- rownames(gt)
+    x <- melt(x, id.vars='clone')
+    f=function(s) {
+        s <- strsplit(s,'[.]')[[1]]
+        list(marker=s[1],copy=as.integer(s[2]))
+    }
+    markers <- rbindlist(lapply(as.character(x$variable), f))
+    x <- cbind(x, markers)
+    x$copy <- paste('copy',x$copy)
+    x$copy <- factor(x$copy, levels=paste0('copy ',1:4))
+    x$clone <- factor(x$clone, levels=rev(rownames(gt)))
+    x$marker <- factor(x$marker, levels=unique(x$marker))
+    p <- ggplot(x, aes(x=marker, y=clone)) +
+        scale_x_discrete(expand=c(0,0)) +
+        scale_y_discrete(expand=c(0,0)) +
+        geom_tile(data=x[is.na(value),], aes(fill=value)) + 
+        geom_tile(data=x[!is.na(value),],aes(fill=value),color='black',size=0.25) + 
+        scale_fill_gradient2(low='blue',mid='white',high='red',
+                             midpoint=round(median(x$value,na.rm=T)),name='Poly-G length (bp)') +
+        facet_wrap(facets=~copy, ncol=1) +
+        ang::theme_ang(base_size=10) +
+        theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5))
+    p
+}
+
+
+##' get_observed_data
+get_observed_data <- function(gt, purities=NULL, sd.technical.error=0) {
+    ## create 'admixed' genotype data, which is the underlying tumor marker lengths scaled by their purities. 
+    ## This can be treated as the admixed difference in mean-marker-lengths from the normal.
+
+    if(!is.null(purities)) {
+        tumors <- rownames(gt)
+        n_markers <- ncol(gt)
+        normal <- as.numeric(gt['normal',])
+        for(sa in tumors) gt[sa,] <- ( gt[sa,] * purities[sa,1] ) + (normal * (1 - purities[sa,1]))
+    }
+
+    marker_min_meanlengths <- apply(gt, 2, min)
+    for(mi in 1:n_markers) {
+        gt[,mi] <- gt[,mi] - marker_min_meanlengths[mi]
+    }
+   
+    ## add noise after admixing the mean lengths according to the sample purities
+    if(sd.technical.error > 0) for(i in 1:nrow(gt)) gt[i,] <- gt[i,] + rnorm(mean=0,sd=sd.technical.error,n=ncol(gt))
+    gt
 }
 
 

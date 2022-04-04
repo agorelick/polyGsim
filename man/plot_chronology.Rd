@@ -2,10 +2,10 @@
 % Please edit documentation in R/func.R
 \name{plot_chronology}
 \alias{plot_chronology}
-\title{plot the chronology}
+\title{plot_chronology}
 \usage{
 plot_chronology(tree, title, max_gens)
 }
 \description{
-plot the chronology
+plot_chronology
 }

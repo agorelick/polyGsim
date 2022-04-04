@@ -2,6 +2,17 @@
 
 Simulate random multi-sample coalescence trees and corresponding poly-guanine genotypes.
 
+## Installation
+
+```r
+## install the devtools package if you have not already
+install.packages('devtools')
+
+## install the polyGsim package
+devtools::install_github('https://github.com/agorelick/polyGsim')
+```
+
+
 
 ## Simulation 1: Poly-G genotypes for impure bulk tissue samples, no cancer cell clone mixing.
 

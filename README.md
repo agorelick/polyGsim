@@ -75,3 +75,27 @@ plot_mixtures(mix,'Random purity, 80% clonality, even prop from other clones/met
 
 **Fig 4.** Each clone is simulated to be a mixture of a clonal population and other non-clonal populations of tumor cells and admixed normal cells. These  correspond to simulated 'samples' of each tumor, and will be used to generate 'observed' genotypes for the admixed tumors. Note that **clonality** is the proportion of cancer cells in the clone derived from itself rather than other clonal populations. By default, clonality is random (uniformly distributed between 0-1). In this example, it was set to 80% in each tumor sample. The remaining non-clonal fraction of cancer cells can either be random (uniformly distributed between 0-(1-clonality), or evenly distributed (as shown)).
 
+---
+
+```r
+## get "observed" marker lengths, which reflect the true genotypes of each clone, 
+## their proportions in the admixed tumor sample, 
+## and their number of copies of each poly-G marker in each admixed cell population.
+
+mu <- get_mean_marker_lengths(gt, mix, n_markers)
+head(t(mu), 10) ## print the first 10 poly-G markers' mean lengths in each sample
+
+          M1       M2       M3       M4       P1       P2       P3       P4 normal
+m1  16.60913 16.64407 16.53508 16.87754 16.75657 16.84734 16.69669 16.60709   16.5
+m2  23.00000 23.00000 23.00000 23.00000 23.00000 23.00000 23.00000 23.00000   23.0
+m3  15.32108 15.28362 15.42861 15.59829 15.73231 15.14952 15.23775 15.77220   15.5
+m4  17.00494 17.00620 17.00178 17.01219 17.00765 17.01159 17.22037 17.00328   17.0
+m5  14.17281 14.21683 14.01500 14.56880 14.26774 14.40574 14.27547 14.11482   14.0
+m6  19.84563 19.93367 19.62493 20.35365 20.03548 20.31148 20.05093 19.72964   19.5
+m7  18.20841 18.26182 18.07509 18.51851 18.32376 18.49260 20.33198 18.13824   18.0
+m8  18.17775 18.22303 18.06425 18.76828 18.27539 18.41733 18.28334 18.11810   18.0
+m9  18.17281 18.21683 18.06247 18.42682 18.26774 18.40574 18.27547 18.11482   18.0
+m10 21.57530 21.43931 21.86346 20.53065 21.20625 20.64819 21.23451 21.66870   22.0
+```
+
+**Table 1.** The mean length of each poly-G marker in each simulated tumor sample. Mean lengths are calculated fron the genotypes and number of copies of each marker in each cell population, and the proportion of their contribution to the admixed simulated sample. Note, in this example, marker m2 had no indels in any clone/met during the cancer evolution. This is evident in Fig 3, where the only variant in m2 is a copy-number deletion in P3 (which does not affect the mean marker length without any indels).

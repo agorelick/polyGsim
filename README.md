@@ -65,17 +65,22 @@ gt <- get_clone_genotypes(indels, normal)
 ## get random purities and clonalities
 pc <- get_purity_and_clonality(tree)
 
+## for now, we force bulk samples to have 100% clonality for their dominant clone
+original_random_clonalities <- pc$clonality
+pc$clonality <- 1
+
 ## get mixing fractions matrix
 mix <- get_mixing_proportions(pc,uniform_mixing=F)
 
-## Fig 3. Bulk samples with random purity and clonality.
-plot_mixtures(mix,'Purity [0-100%], clonality [50-100%], even prop from other clones/mets')
+## Fig 3. Bulk samples with random purity and 100% clonality.
+plot_mixtures(mix,'Random purity, 100% clonality')
+ggsave('../chronoloG/figures/wiki/fig3.png',width=7,height=5)
 
 ```
 
 <p align="center"> <img src="https://github.com/agorelick/polyGsim/blob/main/figures/wiki/fig3.png" width="700" /> </p>
 
-**Fig 3.** Each bulk sample is simulated to be a mixture of a clonal cancer cell population and other non-clonal populations of tumor cells and admixed normal cells. These correspond to simulated 'samples' of each tumor, and will be used to generate the 'observed' genotypes for the admixed samples. **Purity** is the % of cancer-cells in the bulk sample, drawn from 0-100% and centered at 50%. **Clonality** is the proportion of cancer cells derived from the dominant clone rather than other clones/metastases in the patient, uniformly distributed between 50-100%. The contributions of the non-dominant clones and mets to remaining proportion of cancer cells is uniformly distributed. 
+**Fig 3.** Each bulk sample is generally simulated to be a mixture of a clonal cancer cell population and other non-clonal populations of tumor cells and admixed normal cells. In this example, we make each dominant clone 100% clonal (i.e. there is _no contribution_ of cells from other tumor clones or metastases). Note: **Purity** is the % of cancer-cells in the bulk sample, drawn from 0-100% and centered at 50%. **Clonality** is the proportion of cancer cells derived from the dominant clone rather than other clones/metastases in the patient, which is usually uniformly distributed between 50-100% (here, entirely 100%).
 
 ---
 
@@ -87,19 +92,19 @@ ml <- get_mean_marker_lengths(gt, mix, n_markers)
 ## Table 1. The first 10 poly-G markers' mean lengths in each sample
 head(t(ml), 10) 
 
-          M1       M2       M3       M4       P1       P2       P3 normal
-m1  19.50000 19.50000 19.50000 19.50000 19.50000 19.50000 19.50000   19.5
-m2  20.02946 20.00098 20.01766 20.00375 20.00858 20.00736 20.24360   20.0
-m3  15.00000 15.00000 15.00000 15.00000 15.00000 15.00000 15.00000   15.0
-m4  21.50000 21.50000 21.50000 21.50000 21.50000 21.50000 21.50000   21.5
-m5  15.00000 15.00000 15.00000 15.00000 15.00000 15.00000 15.00000   15.0
-m6  18.30117 18.04219 18.32874 18.45045 18.35371 18.55528 18.51991   18.0
-m7  16.79663 16.96242 16.78004 16.58190 16.87044 16.97419 16.97867   17.0
-m8  20.00245 19.99904 19.82119 19.59900 19.94589 19.99109 20.23049   20.0
-m9  20.49123 20.49920 20.46737 20.09539 20.46424 20.48931 20.49398   20.5
-m10 15.79165 15.96200 15.77048 15.57822 15.69985 15.95680 15.97354   16.0
-
+          M1      M2       M3       M4       P1       P2       P3 normal
+m1  19.50000 19.5000 19.50000 19.50000 19.50000 19.50000 19.50000   19.5
+m2  20.00000 20.0000 20.00000 20.00000 20.00000 20.00000 20.27318   20.0
+m3  15.00000 15.0000 15.00000 15.00000 15.00000 15.00000 15.00000   15.0
+m4  21.50000 21.5000 21.50000 21.50000 21.50000 21.50000 21.50000   21.5
+m5  15.00000 15.0000 15.00000 15.00000 15.00000 15.00000 15.00000   15.0
+m6  18.25476 18.0401 18.27913 18.43612 18.32693 18.59848 18.54636   18.0
+m7  16.74524 16.9599 16.72087 16.56388 17.00000 17.00000 17.00000   17.0
+m8  20.00000 20.0000 19.72087 19.56388 20.00000 20.00000 20.27318   20.0
+m9  20.50000 20.5000 20.50000 20.06388 20.50000 20.50000 20.50000   20.5
+m10 15.74524 15.9599 15.72087 15.56388 15.67307 16.00000 16.00000   16.0
 ```
+
 **Table 1.** The mean length of the first 10 poly-G markers in each simulated tumor sample. Mean lengths are calculated from the genotypes and number of copies of each marker in each cell population (currently all diploid), and the proportion of their contribution to the admixed simulated sample. 
 
 ---
@@ -118,4 +123,4 @@ plot_simulated_tree(ad_tree,title='Angular distance tree')
 
 <p align="center"> <img src="https://github.com/agorelick/polyGsim/blob/main/figures/wiki/fig4.png" width="700" /> </p>
 
-**Fig 4.** Angular distance neighbor-joining tree for this simulation. Angular distance is generated from the mean poly-G marker lengths, assuming impure bulk samples consisting of a dominant clone (labeled), admixed normal cells and cells from other non-dominant tumor clones and metastases.
+**Fig 4.** Angular distance neighbor-joining tree for this simulation. Angular distance is generated from the mean poly-G marker lengths, assuming bulk samples consisting of a dominant cancer clone with 100% clonality, and overall impurity due to admixed normal cells.

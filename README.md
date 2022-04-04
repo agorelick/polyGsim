@@ -56,3 +56,22 @@ plot_genotypes(gt)
 <p align="center"> <img src="https://github.com/agorelick/polyGsim/blob/main/figures/wiki/fig3.png" width="700" /> </p>
 
 **Fig 3.** Simulated genotypes (poly-guanine repeat lengths) for each allelic copy in each sample. Note that Normal always has only 2 copies (diploid). Grey regions have missing values, either due to copy number deletions (in copies 1, 2) or due to no duplication (in copies 3, 4). Each marker has a 50% probability of having copy number alterations early (i.e. after first cancer cell but *before subsequent indels* in all clones) or late (after first cancer cell and *after subsequent indels* in all clones).
+
+---
+
+```r
+## get random purities and clonalities
+pc <- get_purity_and_clonality(tree)
+
+## for now, replace the default random clonalities to make all samples 80% clonal
+pc$clonality <- 0.8 
+
+## get mixing fractions. Uniform mixing assumes the 20% non-clonal cancer cells are evenly from the remaining clones/mets.
+mix <- get_mixing_proportions(pc,nonclonal_evenly_distributed=T)
+plot_mixtures(mix,'Random purity, 80% clonality, even prop from other clones/mets')
+```
+
+<p align="center"> <img src="https://github.com/agorelick/polyGsim/blob/main/figures/wiki/fig4.png" width="600" /> </p>
+
+**Fig 4.** Each clone is simulated to be a mixture of a clonal population and other non-clonal populations of tumor cells and admixed normal cells. These  correspond to simulated 'samples' of each tumor, and will be used to generate 'observed' genotypes for the admixed tumors. Note that **clonality** is the proportion of cancer cells in the clone derived from itself rather than other clonal populations. By default, clonality is random (uniformly distributed between 0-1). In this example, it was set to 80% in each tumor sample. The remaining non-clonal fraction of cancer cells can either be random (uniformly distributed between 0-(1-clonality), or evenly distributed (as shown)).
+

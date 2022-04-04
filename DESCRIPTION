@@ -15,6 +15,7 @@ Depends:
     ggtree,
     ggplot2,
     cowplot,
-    Rcpp
+    Rcpp,
+    RColorBrewer
 LinkingTo: Rcpp
 RoxygenNote: 7.1.2

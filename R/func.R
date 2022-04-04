@@ -135,7 +135,7 @@ plot_chronology <- function(tree,title,max_gens) {
     p <- ggtree(tree,layout='rect') %<+% groups
     p$data$label <- paste0(' ',p$data$label)
     p$data$x <- max_gens * p$data$x / max(p$data$x)
-    p <- p + ang::theme_ang(base_size=12) + geom_tiplab(aes(color=group),angle=0)
+    p <- p + polyGsim_theme(base_size=12) + geom_tiplab(aes(color=group),angle=0)
     p$data$node_lab <- as.character(NA)
     p$data$node_lab[p$data$isTip==F & p$data$x < 0.98*max_gens] <- round(p$data$x[p$data$isTip==F & p$data$x < 0.98*max_gens])
     p <- p + geom_text(aes(label=node_lab),angle=0,size=3,color='blue',hjust=-0.1)
@@ -322,7 +322,7 @@ plot_mixtures <- function(x,title='') {
         geom_bar(stat='identity',aes(fill=variable),color='black',size=0.25) +
         geom_text(data=label_data,aes(label=label),vjust=-0.15,size=3) +
         scale_fill_manual(values=cols,name='Origin') +
-        ang::theme_ang(base_size=12) +
+        polyGsim_theme(base_size=12) +
         labs(x='Sample',y='Mixture proportion', subtitle=title)
     p
 }
@@ -331,7 +331,7 @@ plot_mixtures <- function(x,title='') {
 
 ##' get_mean_marker_lengths
 ##' @export
-get_mean_marker_lengths <- function(gt, mix, n_markers, anonymize=T) {
+get_mean_marker_lengths <- function(gt, mix, n_markers) {
 
     get_mean_lengths_per_sample <- function(s, samples, gt, x) { 
         ## get admixed observed genotypes based on purity, clonality, and copy number alterations
@@ -359,19 +359,25 @@ get_mean_marker_lengths <- function(gt, mix, n_markers, anonymize=T) {
     l <- dcast(sample ~ marker, value.var='mu', data=l)
     markers <- paste0('m',1:n_markers)
     l <- l[,c('sample',markers),with=F]
-    l <- ang::d2m(l)
 
+    ## convert to a matrix and return it
+    rows <- l$sample
+    l <- l[, c(2:ncol(l)), with = F]
+    m <- as.matrix(l)
+    rownames(m) <- rows
+    m
+}
+
+
+##' get_anonymized_marker_lengths
+##' @export
+get_anonymized_marker_lengths <- function(gt) {
     ## anonymize by subtracting the minimum length for each marker 
-    get_anonymized_marker_lengths <- function(gt) {
-        marker_min_meanlengths <- apply(gt, 2, min)
-        for (mi in 1:n_markers) {
-            gt[, mi] <- gt[, mi] - marker_min_meanlengths[mi]
-        }
-        gt
+    marker_min_meanlengths <- apply(gt, 2, min)
+    for (mi in 1:n_markers) {
+        gt[, mi] <- gt[, mi] - marker_min_meanlengths[mi]
     }
-    if(anonymize==T)  l <- get_anonymized_marker_lengths(l)
-
-    l
+    gt
 }
 
 
@@ -457,7 +463,7 @@ plot_simulated_tree <- function(tree,layout='ape',title=NA,purities=NULL) {
     names(cols) <- c('Primary','Metastasis','Normal')
     p <- ggtree(tree,layout=layout) %<+% groups
     p <- p + geom_tiplab(aes(color=group),angle=0) +
-        ang::theme_ang(base_size=12) +
+        polyGsim_theme(base_size=12) +
         theme(legend.position='right',
               axis.line=element_blank(),axis.text=element_blank(),axis.ticks=element_blank()) + 
         scale_color_manual(values=cols,name='Tissue')
@@ -483,6 +489,14 @@ get_mean_marker_length_matrix <- function(gt,n_markers) {
     tmp
 }
 
+
+##' polyGsim_theme
+##' @export
+polyGsim_theme <- function (base_size = 11, base_line_size = base_size/22, base_rect_size = base_size/22) {
+    require(ggplot2)
+    theme_bw(base_size = base_size, base_line_size = base_line_size, base_rect_size = base_rect_size) %+replace% 
+    theme(line = element_line(colour = "black", size = base_line_size, linetype = 1, lineend = "round"), text = element_text(colour = "black", size = base_size, lineheight = 0.9, hjust = 0.5, vjust = 0.5, angle = 0, margin = margin(), debug = F), axis.text = element_text(colour = "black", size = rel(0.8)), axis.ticks = element_line(colour = "black", size = rel(1)), panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = "black", size = rel(1)), legend.key = element_blank(), strip.background = element_blank())
+}
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -644,7 +658,7 @@ plot_genotypes_with_cnas <- function(gt) {
         scale_fill_gradient2(low='blue',mid='white',high='red',
                              midpoint=round(median(x$value,na.rm=T)),name='Poly-G length (bp)') +
         facet_wrap(facets=~copy, ncol=1) +
-        ang::theme_ang(base_size=10) +
+        polyGsim_theme(base_size=10) +
         theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5))
     p
 }

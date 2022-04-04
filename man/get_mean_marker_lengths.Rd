@@ -4,7 +4,7 @@
 \alias{get_mean_marker_lengths}
 \title{get_mean_marker_lengths}
 \usage{
-get_mean_marker_lengths(gt, mix, n_markers, anonymize = T)
+get_mean_marker_lengths(gt, mix, n_markers)
 }
 \description{
 get_mean_marker_lengths

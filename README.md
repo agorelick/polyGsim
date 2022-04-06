@@ -85,7 +85,6 @@ mix <- get_mixing_proportions(pc,uniform_mixing=F)
 
 ## Fig 3. Bulk samples with random purity and 100% clonality.
 plot_mixtures(mix,'Random purity, 100% clonality')
-ggsave('../chronoloG/figures/wiki/fig3.png',width=7,height=5)
 ```
 
 <p align="center"> <img src="https://github.com/agorelick/polyGsim/blob/main/figures/wiki/fig3.png" width="700" /> </p>

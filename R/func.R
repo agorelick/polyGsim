@@ -43,10 +43,7 @@ random_generations <- function(starting_cells=1, bdratio=1.01, max_gens=1e4, max
 ##' @export
 get_clone_tree <- function(n_primary_clones, n_is_avg=F, met_prob_per_clone=0.2, avg_mets_per_clone=4) { 
 
-    random_chronology <- function(n_clones,n_is_avg=T,ancestor='normal') {  
-        ## pick a random number of clones with the given average lambda
-        if(n_is_avg) n_clones <- rpois(1,lambda=n_clones)
-
+    random_chronology <- function(n_clones,ancestor='normal') {  
         ## random tree toplogy
         clones <- paste0('s',1:n_clones)
         tree <- rtree(n_clones, tip.label=clones)
@@ -83,7 +80,7 @@ get_clone_tree <- function(n_primary_clones, n_is_avg=F, met_prob_per_clone=0.2,
     n_met_clones <- rbinom(size=n_primary_clones,n=1,prob=met_prob_per_clone)
     if(n_met_clones==0) n_met_clones <- 1
     n_clones <- n_primary_clones + n_met_clones ## this is PT clones + seeding-clones
-    ptree <- random_chronology(n_clones,n_is_avg=F)
+    ptree <- random_chronology(n_clones)
     ptree$tip.label <- gsub('s','P',ptree$tip.label)
 
     ## for each met-seeding clone, get a new random tree of mets, then bind it on 
@@ -259,9 +256,9 @@ get_purity_and_clonality <- function(tree, purity_shape1=2, purity_shape2=2, clo
 
 ##' get_mixing_proportions
 ##' @export
-get_mixing_proportions <- function(pc,uniform_mixing=F) {
+get_mixing_proportions <- function(pc,even_mixing=F) {
 
-    get_sample_mixture <- function(s, pc, uniform_mixing) {
+    get_sample_mixture <- function(s, pc, even_mixing) {
         ## for each sample, take the non-normal fraction and split it over the tumor samples
 
         samples <- rownames(pc)
@@ -273,7 +270,7 @@ get_mixing_proportions <- function(pc,uniform_mixing=F) {
         prop_self <- clonality * prop_cancer
         prop_others <- prop_cancer - prop_self
 
-        if(uniform_mixing==F) {
+        if(even_mixing==F) {
             tmp <- runif(0,1,n=length(nonself_samples))
             prop_others <- prop_others * tmp / sum(tmp)
         } else {
@@ -292,7 +289,7 @@ get_mixing_proportions <- function(pc,uniform_mixing=F) {
     }
     pc['normal','clonality'] <- 0
     samples <- rownames(pc)
-    l <- lapply(samples, get_sample_mixture, pc, uniform_mixing)
+    l <- lapply(samples, get_sample_mixture, pc, even_mixing)
     d <- rbindlist(l) 
     out <- dcast( self + prop_cancer + clonality ~ sample, value.var='prop', data=d)
     setnames(out,'prop_cancer','purity')
@@ -303,7 +300,6 @@ get_mixing_proportions <- function(pc,uniform_mixing=F) {
 ##' plot_mixtures
 ##' @export
 plot_mixtures <- function(x,title='') {
-    if(nrow(x) > 9) stop('Only works for at most 8 tumors + 1 normal')
     x <- x[order(purity,decreasing=F),]
     pd <- x[self!='normal']
     self_levels <- pd$self
@@ -311,7 +307,7 @@ plot_mixtures <- function(x,title='') {
     pd <- melt(pd, id.vars=c('self','purity','clonality'))
     pd$self <- factor(pd$self, levels=self_levels)
     pd$variable <- factor(pd$variable,levels=sample_levels)
-    cols <- c('white',brewer.pal(nrow(x)-1, 'Accent'))
+    cols <- c('white', rep(brewer.pal(8,'Accent'), length.out=nrow(x)-1))
     names(cols) <- sample_levels
     label_data <- data.table(self=x$self, value=x$purity)
     label_data$self <- factor(label_data$self, levels=self_levels)
@@ -444,7 +440,7 @@ get_angular_distance_matrix <- function(d) {
 
 ##' plot_simulated_tree
 ##' @export
-plot_simulated_tree <- function(tree,layout='ape',title=NA,purities=NULL) {
+plot_simulated_tree <- function(tree,layout='ape',title=NA,purities=NULL,legend.position='right') {
     if(!is.rooted(tree)) tree <- phytools::reroot(tree, node.number=which(tree$tip.label=='normal'))
     groups <- data.table(label=tree$tip.label)
     groups[grep('^P',label),group:='Primary']
@@ -464,7 +460,7 @@ plot_simulated_tree <- function(tree,layout='ape',title=NA,purities=NULL) {
     p <- ggtree(tree,layout=layout) %<+% groups
     p <- p + geom_tiplab(aes(color=group),angle=0) +
         polyGsim_theme(base_size=12) +
-        theme(legend.position='right',
+        theme(legend.position=legend.position,
               axis.line=element_blank(),axis.text=element_blank(),axis.ticks=element_blank()) + 
         scale_color_manual(values=cols,name='Tissue')
     if(!is.null(purities)) {

@@ -52,7 +52,7 @@ plot(tree)
 
 <p align="center"> <img src="https://github.com/agorelick/polyGsim/blob/main/figures/wiki/fig1.png" width="500" /> </p>
 
-**Fig 1.** A random phylogeny of primary tumor clones and monoclonal metastases. Specified parameters: Exactly 3 primary clones; for each primary clone there is prop=0.2 of a metastatic clade somewhere on the tree; each met-clade has an average of 3 monoclonal metastases.
+**Fig 1.** A random phylogeny of primary tumor clones and monoclonal metastases. Specified parameters: Exactly 3 primary clones; for each primary clone there is prop=0.2 of a metastatic clade somewhere on the tree (minimum of 1); each met-clade has an average of 3 monoclonal metastases (minimum of 3).
 
 
 ```r

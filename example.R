@@ -45,7 +45,7 @@ original_random_clonalities <- pc$clonality
 pc$clonality <- 1
 
 ## get mixing fractions matrix
-mix <- get_mixing_proportions(pc,uniform_mixing=F)
+mix <- get_mixing_proportions(pc,even_mixing=F)
 plot_mixtures(mix,'Random purity, 100% clonality') #, even prop from other clones/mets')
 ggsave('../chronoloG/figures/wiki/fig3.png',width=7,height=5)
 
@@ -75,7 +75,7 @@ ggsave('../chronoloG/figures/wiki/fig4.pdf',width=7,height=5)
 pc$clonality <- original_random_clonalities
 
 ## get mixing fractions matrix
-mix <- get_mixing_proportions(pc,uniform_mixing=F)
+mix <- get_mixing_proportions(pc,even_mixing=F)
 plot_mixtures(mix,'Purity [0-100%], clonality [50-100%], random contribution from other clones')
 ggsave('../chronoloG/figures/wiki/fig5.png',width=7,height=5)
 

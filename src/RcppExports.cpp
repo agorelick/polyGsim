@@ -47,27 +47,29 @@ BEGIN_RCPP
 END_RCPP
 }
 // rcpp_mutate
-IntegerVector rcpp_mutate(IntegerVector gt, double mu);
-RcppExport SEXP _polyGsim_rcpp_mutate(SEXP gtSEXP, SEXP muSEXP) {
+IntegerVector rcpp_mutate(IntegerVector gt, double mu, NumericVector biases);
+RcppExport SEXP _polyGsim_rcpp_mutate(SEXP gtSEXP, SEXP muSEXP, SEXP biasesSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< IntegerVector >::type gt(gtSEXP);
     Rcpp::traits::input_parameter< double >::type mu(muSEXP);
-    rcpp_result_gen = Rcpp::wrap(rcpp_mutate(gt, mu));
+    Rcpp::traits::input_parameter< NumericVector >::type biases(biasesSEXP);
+    rcpp_result_gen = Rcpp::wrap(rcpp_mutate(gt, mu, biases));
     return rcpp_result_gen;
 END_RCPP
 }
 // rcpp_mutate_length_matrix
-IntegerMatrix rcpp_mutate_length_matrix(IntegerMatrix gt, double mu, int gens);
-RcppExport SEXP _polyGsim_rcpp_mutate_length_matrix(SEXP gtSEXP, SEXP muSEXP, SEXP gensSEXP) {
+IntegerMatrix rcpp_mutate_length_matrix(IntegerMatrix gt, double mu, int gens, NumericVector biases);
+RcppExport SEXP _polyGsim_rcpp_mutate_length_matrix(SEXP gtSEXP, SEXP muSEXP, SEXP gensSEXP, SEXP biasesSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< IntegerMatrix >::type gt(gtSEXP);
     Rcpp::traits::input_parameter< double >::type mu(muSEXP);
     Rcpp::traits::input_parameter< int >::type gens(gensSEXP);
-    rcpp_result_gen = Rcpp::wrap(rcpp_mutate_length_matrix(gt, mu, gens));
+    Rcpp::traits::input_parameter< NumericVector >::type biases(biasesSEXP);
+    rcpp_result_gen = Rcpp::wrap(rcpp_mutate_length_matrix(gt, mu, gens, biases));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -76,8 +78,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_polyGsim_rcpp_sum", (DL_FUNC) &_polyGsim_rcpp_sum, 1},
     {"_polyGsim_rcpp_rbinom", (DL_FUNC) &_polyGsim_rcpp_rbinom, 3},
     {"_polyGsim_rcpp_rpois", (DL_FUNC) &_polyGsim_rcpp_rpois, 2},
-    {"_polyGsim_rcpp_mutate", (DL_FUNC) &_polyGsim_rcpp_mutate, 2},
-    {"_polyGsim_rcpp_mutate_length_matrix", (DL_FUNC) &_polyGsim_rcpp_mutate_length_matrix, 3},
+    {"_polyGsim_rcpp_mutate", (DL_FUNC) &_polyGsim_rcpp_mutate, 3},
+    {"_polyGsim_rcpp_mutate_length_matrix", (DL_FUNC) &_polyGsim_rcpp_mutate_length_matrix, 4},
     {NULL, NULL, 0}
 };
 

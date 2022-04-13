@@ -27,15 +27,18 @@ NumericVector rcpp_rpois(int n, double lambda) {
 }
 
 
-
 // [[Rcpp::export]]
-IntegerVector rcpp_mutate(IntegerVector gt, double mu) {
+IntegerVector rcpp_mutate(IntegerVector gt, double mu, NumericVector biases) {
     int n_markers=gt.length();
     NumericVector indels = rbinom( n_markers, 1, mu );
-    NumericVector deletions = rbinom( n_markers, 1, 0.5 );
 
     for(int i=0; i<n_markers; i++){
-        if(deletions[i]==1){
+
+        // for the currrent marker, get indel direction considering the bias
+        // NB: 0 means deletion, 1 means insertion
+        double insertion = R::rbinom( 1, biases[i] );
+
+        if(insertion==0){
             indels[i] = -1*indels[i];
         }
      
@@ -50,12 +53,12 @@ IntegerVector rcpp_mutate(IntegerVector gt, double mu) {
 
 
 // [[Rcpp::export]]
-IntegerMatrix rcpp_mutate_length_matrix(IntegerMatrix gt, double mu, int gens) { 
+IntegerMatrix rcpp_mutate_length_matrix(IntegerMatrix gt, double mu, int gens, NumericVector biases) { 
     int max_ploidy = gt.nrow(); 
 
     for(int j=0; j<max_ploidy; j++) {
         for(int i=0; i<gens; i++){
-            gt(j,_) = rcpp_mutate(gt(j,_), mu);
+            gt(j,_) = rcpp_mutate(gt(j,_), mu, biases);
         }
     }
     return(gt);

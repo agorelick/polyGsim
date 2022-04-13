@@ -13,11 +13,11 @@ rcpp_rpois <- function(n, lambda) {
     .Call(`_polyGsim_rcpp_rpois`, n, lambda)
 }
 
-rcpp_mutate <- function(gt, mu) {
-    .Call(`_polyGsim_rcpp_mutate`, gt, mu)
+rcpp_mutate <- function(gt, mu, biases) {
+    .Call(`_polyGsim_rcpp_mutate`, gt, mu, biases)
 }
 
-rcpp_mutate_length_matrix <- function(gt, mu, gens) {
-    .Call(`_polyGsim_rcpp_mutate_length_matrix`, gt, mu, gens)
+rcpp_mutate_length_matrix <- function(gt, mu, gens, biases) {
+    .Call(`_polyGsim_rcpp_mutate_length_matrix`, gt, mu, gens, biases)
 }
 

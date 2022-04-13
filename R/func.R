@@ -41,7 +41,9 @@ random_generations <- function(starting_cells=1, bdratio=1.01, max_gens=1e4, max
 
 ##' get_clone_tree
 ##' @export
-get_clone_tree <- function(n_primary_clones, n_is_avg=F, met_prob_per_clone=0.2, avg_mets_per_clone=4) { 
+get_clone_tree <- function(n_clones) { 
+
+    if(n_clones < 4) stop('n_clones must be at least 4!')
 
     random_chronology <- function(n_clones,ancestor='normal') {  
         ## random tree toplogy
@@ -70,50 +72,102 @@ get_clone_tree <- function(n_primary_clones, n_is_avg=F, met_prob_per_clone=0.2,
         return(tree2)
     }
 
+    ## randomly pick number of PT and Met clones such that always at least 2 PT and 2 mets in every tree
+    n_pt_clones <- sample(2:(n_clones-2),1) 
+    n_met_clones <- n_clones - n_pt_clones
 
-    if(n_is_avg==T) {
-        n_primary_clones <- rpois(lambda=n_primary_clones,n=1)
-        if(n_primary_clones==0) n_primary_clones <- 1
+    ## iteratively select the number of met clones across met-clades to give the total number of met_clones
+    remaining_met_clones <- n_met_clones
+    met_clade_sizes <- c()
+    i <- 0
+    while(i < 100 & remaining_met_clones > 0) { 
+        n_mets_in_clade <- sample(1:remaining_met_clones,1)
+        met_clade_sizes <- c(met_clade_sizes, n_mets_in_clade)
+        remaining_met_clones <- remaining_met_clones - n_mets_in_clade
     }
+    met_clade_sizes
+    n_met_clades <- length(met_clade_sizes)
 
-    ## tree for primary tumor clones
-    n_met_clones <- rbinom(size=n_primary_clones,n=1,prob=met_prob_per_clone)
-    if(n_met_clones==0) n_met_clones <- 1
-    n_clones <- n_primary_clones + n_met_clones ## this is PT clones + seeding-clones
-    ptree <- random_chronology(n_clones)
+    ## get the PT clone tumor, with 1 additional tip for each met clade
+    ptree <- random_chronology(n_pt_clones+n_met_clades)
     ptree$tip.label <- gsub('s','P',ptree$tip.label)
 
+    ## randomly pick which tips are where the met clade is joined
+    tumor_tips <- grep('^P',ptree$tip.label,value=T)
+    met_clade_roots <- sample(tumor_tips,n_met_clades)
+
     ## for each met-seeding clone, get a new random tree of mets, then bind it on 
-    tree <- copy(ptree)
+    growing_tree <- copy(ptree)
 
-    for(i in 1:n_met_clones) { 
-        ## which PT clones seeded mets?
-        primary_clones <- grep('^P',tree$tip.label)
-        m <- sample(primary_clones,1)
-        current_clones <- grep('^M',tree$tip.label,value=T)
+    for(i in 1:n_met_clades) { 
+        current_met_clade_size <- met_clade_sizes[i]
+        current_met_root <- met_clade_roots[i]
 
-        ## get the met tree
-        n_clones <- rpois(n=1,lambda=avg_mets_per_clone)
-        if(n_clones < 3) n_clones <- 3
-        mtree <- rtree(n_clones,rooted=T)
-        mtree$tip.label <- gsub('t','M',mtree$tip.label)
-        new_mets <- grep('^M',mtree$tip.label,value=T)
-        tmp <- data.table(to_rename=new_mets)
-        tmp$pos <- as.integer(gsub('M','',tmp$to_rename))
-        tmp <- tmp[order(pos),]
-        increment <- ifelse(length(current_clones) > 0, max(as.integer(gsub('M','',current_clones))), 0)
-        tmp[,new_name:=paste0('M',pos+increment)]
-        mtree$tip.label <- tmp$new_name       
-        tree <- bind.tree(tree, mtree, where=m)
+        if(current_met_clade_size >= 3) {
+            ## generate a new random tree for this clade
+            mtree <- ape::rtree(current_met_clade_size,rooted=T)
+            mtree$tip.label <- gsub('^t','M',mtree$tip.label)
 
-        ## fix PT clone numbering
-        pt_clones <- rev(grep('^P',tree$tip.label))
-        for(s in pt_clones) tree$tip.label[s] <- paste0('P',s)
+            ## update its labels so that they don't conflict with the tips already in the growing tree
+            tmp <- data.table(sample=mtree$tip.label)
+            tmp$pos <- 1:nrow(tmp)
+            tmp <- tmp[order(pos),]
+            current_met_clones <- grep('^M',growing_tree$tip.label,value=T)
+            increment <- ifelse(length(current_met_clones) > 0, max(as.integer(gsub('M','',current_met_clones))), 0)
+            tmp[grep('^M',sample),new_name:=paste0('M',pos+increment)]
+            tmp[is.na(new_name),new_name:=sample]
+            mtree$tip.label <- tmp$new_name       
+
+            ## attach the new met-clade tree onto the growing tree at the right position
+            growing_tree <- bind.tree(growing_tree, mtree, where=which(growing_tree$tip.label==current_met_root))
+
+        } else if(current_met_clade_size==2) {
+            ## generate a new random tree for this clade
+            mtree <- ape::rtree(3,rooted=T)
+            n_to_drop <- 3 - current_met_clade_size
+            dropped_tip <- sample(mtree$tip.label,n_to_drop)
+            mtree <- drop.tip(mtree, dropped_tip)
+            mtree$tip.label <- gsub('^t','M',mtree$tip.label)
+
+            ## update its labels so that they don't conflict with the tips already in the growing tree
+            tmp <- data.table(sample=mtree$tip.label)
+            tmp$pos <- 1:nrow(tmp)
+            tmp <- tmp[order(pos),]
+            current_met_clones <- grep('^M',growing_tree$tip.label,value=T)
+            increment <- ifelse(length(current_met_clones) > 0, max(as.integer(gsub('M','',current_met_clones))), 0)
+            tmp[grep('^M',sample),new_name:=paste0('M',pos+increment)]
+            tmp[is.na(new_name),new_name:=sample]
+            mtree$tip.label <- tmp$new_name       
+
+            ## attach the new met-clade tree onto the growing tree at the right position
+            growing_tree <- bind.tree(growing_tree, mtree, where=which(growing_tree$tip.label==current_met_root))
+
+        } else if(current_met_clade_size==1) {
+            convert_to_met <- which(growing_tree$tip.label==current_met_root)
+            
+            tmp <- data.table(sample='M1')
+            tmp$pos <- 1:nrow(tmp)
+            current_met_clones <- grep('^M',growing_tree$tip.label,value=T)
+            increment <- ifelse(length(current_met_clones) > 0, max(as.integer(gsub('M','',current_met_clones))), 0)
+            tmp[grep('^M',sample),new_name:=paste0('M',pos+increment)]
+            tmp[is.na(new_name),new_name:=sample]
+            new_met_name <- tmp$new_name 
+            growing_tree$tip.label[convert_to_met] <- new_met_name      
+        }
     }
 
-    tree <- TreeTools::Preorder(tree)
-    tree
+    ## remake PT clone labels (so that no gaps in numbers)
+    tmp <- data.table(pt_clone=grep('^P',growing_tree$tip.label,value=T))
+    tmp$pos <- 1:nrow(tmp)
+    tmp$newpos <- nrow(tmp):1
+    tmp$newname <- paste0('p',tmp$newpos)
+    for(s in 1:nrow(tmp)) growing_tree$tip.label[which(growing_tree$tip.label==tmp$pt_clone[s])] <- tmp$newname[s]
+
+    updated_tips <- grep('^p',growing_tree$tip.label)    
+    growing_tree$tip.label[updated_tips] <- toupper(growing_tree$tip.label[updated_tips])
+    growing_tree
 }
+
 
 
 ##' plot_chronology
@@ -138,16 +192,33 @@ plot_chronology <- function(tree,title,max_gens) {
     p <- p + geom_text(aes(label=node_lab),angle=0,size=3,color='blue',hjust=-0.1)
     p <- p + theme(legend.position='none', axis.line.y=element_blank(),axis.text.y=element_blank(),axis.ticks.y=element_blank()) 
     p <- p + scale_color_manual(values=cols,name='Tissue')
-    p <- p + ggplot2::labs(x='Generations from 1st cancer cell')
+    p <- p + ggplot2::labs(x='Generations from zygote')
     p <- p + ggplot2::ggtitle(title)
     p 
 }
 
 
+##' get_marker_bias
+##' @export
+get_marker_bias <- function(n_markers, bias.sd) { 
+    ## introduce bias for insertions or deletions in each marker
+    if(bias.sd > 0.5 | bias.sd < 0 | is.na(bias.sd)) stop('bias.sd must be in [0-0.5]')
+    tmp <- data.table(marker=paste0('m',1:n_markers))
+    get_bias <- function(n, s) {
+        ## calculate alpha/beta shape parameters to ensure mean=0.5 and SD=bias.sd
+        v <- s^2
+        a <- ((1/v)-4)/8
+        b <- a
+        sort(rbeta(n=n, shape1=a, shape2=a),decreasing=F)
+    }
+    tmp$bias <- get_bias(n=n_markers,bias.sd)
+    tmp
+}
+
 
 ##' get_indels_for_tree
 ##' @export
-get_indels_for_tree <- function(tree,max_gens,mu,n_markers,max_ploidy=2) { 
+get_indels_for_tree <- function(tree,max_gens,mu,n_markers,bias,max_ploidy=2) { 
 
     ## extract tree data
     d <- as.data.table(ggtree(tree)$data)
@@ -160,12 +231,12 @@ get_indels_for_tree <- function(tree,max_gens,mu,n_markers,max_ploidy=2) {
     d <- d[gens_to_run > 0,]
 
     ## for each branch, run simulations for the according number of generations.
-    simulate_indels_over_gens_for_branch <- function(gens,mu,n_markers,max_ploidy) {
+    simulate_indels_over_gens_for_branch <- function(gens,mu,n_markers,max_ploidy,biases) {
         gt_0 <- t(as.matrix(rep(0,n_markers*max_ploidy))) ## initial genotype for each branch
-        gt_T <- rcpp_mutate_length_matrix(gt_0, mu, gens)
+        gt_T <- rcpp_mutate_length_matrix(gt_0, mu, gens, biases=c(biases,biases))
         out <- as.list(gt_T[1,])
     }
-    indels_for_each_branch <- lapply(d$gens_to_run, simulate_indels_over_gens_for_branch, mu, n_markers,max_ploidy)
+    indels_for_each_branch <- lapply(d$gens_to_run, simulate_indels_over_gens_for_branch, mu, n_markers, max_ploidy, bias$bias)
     indels_for_each_branch <- rbindlist(indels_for_each_branch)
     indels_for_each_branch$parent <- d$parent
     indels_for_each_branch$node <- d$node
@@ -237,16 +308,21 @@ get_clone_genotypes <- function(indels, normal) {
 }
 
 
-##' get_purity_and_clonality
+##' get_purities
 ##' @export
-get_purity_and_clonality <- function(tree, purity_shape1=2, purity_shape2=2, clonality_min=0.5, clonality_max=0.95) {
+get_purity <- function(tree, purity_shape1=2, purity_shape2=2, clonality_min=0.5, clonality_max=1.0, sim_clonality=F) {
     samples <- tree$tip.label
     n_samples <- length(samples)
 
     ## randomly generate tumor purities and clonalities
     purities <- rbeta(n=n_samples, shape1=purity_shape1, shape2=purity_shape2)
-    clonalities <- runif(n=n_samples, min=clonality_min, max=clonality_max)
-    out <- data.frame(purity=purities, clonality=clonalities) 
+    if(sim_clonality==T & !is.na(clonality_min) & !is.na(clonality_max)) {
+        clonalities <- runif(n=n_samples, min=clonality_min, max=clonality_max)
+    } else {
+        clonalities <- rep(1, n_samples)    
+    }
+
+    out <- data.frame(purity=purities, clonality=clonalities)
     rownames(out) <- samples
     out['normal','purity'] <- 0
     out['normal','clonality'] <- 0

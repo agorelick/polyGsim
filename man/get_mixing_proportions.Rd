@@ -4,7 +4,7 @@
 \alias{get_mixing_proportions}
 \title{get_mixing_proportions}
 \usage{
-get_mixing_proportions(pc, uniform_mixing = F)
+get_mixing_proportions(pc, even_mixing = F)
 }
 \description{
 get_mixing_proportions

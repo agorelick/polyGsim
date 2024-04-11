@@ -4,7 +4,13 @@
 \alias{plot_simulated_tree}
 \title{plot_simulated_tree}
 \usage{
-plot_simulated_tree(tree, layout = "ape", title = NA, purities = NULL)
+plot_simulated_tree(
+  tree,
+  layout = "ape",
+  title = NA,
+  purities = NULL,
+  legend.position = "right"
+)
 }
 \description{
 plot_simulated_tree

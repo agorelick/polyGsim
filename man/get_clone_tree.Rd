@@ -4,12 +4,7 @@
 \alias{get_clone_tree}
 \title{get_clone_tree}
 \usage{
-get_clone_tree(
-  n_primary_clones,
-  n_is_avg = F,
-  met_prob_per_clone = 0.2,
-  avg_mets_per_clone = 4
-)
+get_clone_tree(n_clones)
 }
 \description{
 get_clone_tree

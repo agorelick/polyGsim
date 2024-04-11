@@ -2,11 +2,9 @@
 ##' @export
 get_normal_genotype <- function(n_markers) {
     marker_names <- c(paste0('m',1:n_markers,'.1'), paste0('m',1:n_markers,'.2'))
-
     ## normal is the average germline
-    normal <- t(as.matrix(sample(10:25,replace=T,size=n_markers*2)))
+    normal <- t(as.matrix(sample(10:25,replace=T,size=length(marker_names))))
     colnames(normal) <- marker_names
-
     normal
 }
 
@@ -218,7 +216,7 @@ get_marker_bias <- function(n_markers, bias.sd) {
 
 ##' get_indels_for_tree
 ##' @export
-get_indels_for_tree <- function(tree,max_gens,mu,n_markers,bias,max_ploidy=2) { 
+get_indels_for_tree <- function(tree,max_gens,n_markers,mu=1e-4,bias=rep(0, n_markers),max_ploidy=2) { 
 
     ## extract tree data
     d <- as.data.table(ggtree(tree)$data)
@@ -228,7 +226,8 @@ get_indels_for_tree <- function(tree,max_gens,mu,n_markers,bias,max_ploidy=2) {
     xpos <- xpos / max(xpos)
     d$gen_time <- round(xpos * max_gens)
     d$gens_to_run <- c(0,diff(d$gen_time))
-    d <- d[gens_to_run > 0,]
+    #d[gens_to_run==0 & is.Tip==T, gens_to_run:=1]
+    d <- d[gens_to_run >= 0,]
 
     ## for each branch, run simulations for the according number of generations.
     simulate_indels_over_gens_for_branch <- function(gens,mu,n_markers,max_ploidy,biases) {
@@ -236,7 +235,7 @@ get_indels_for_tree <- function(tree,max_gens,mu,n_markers,bias,max_ploidy=2) {
         gt_T <- rcpp_mutate_length_matrix(gt_0, mu, gens, biases=c(biases,biases))
         out <- as.list(gt_T[1,])
     }
-    indels_for_each_branch <- lapply(d$gens_to_run, simulate_indels_over_gens_for_branch, mu, n_markers, max_ploidy, bias$bias)
+    indels_for_each_branch <- lapply(d$gens_to_run, simulate_indels_over_gens_for_branch, mu, n_markers, max_ploidy, bias)
     indels_for_each_branch <- rbindlist(indels_for_each_branch)
     indels_for_each_branch$parent <- d$parent
     indels_for_each_branch$node <- d$node
@@ -288,6 +287,7 @@ get_indels_for_tree <- function(tree,max_gens,mu,n_markers,bias,max_ploidy=2) {
 }
 
 
+ 
 ##' get_clone_genotypes
 ##' @export
 get_clone_genotypes <- function(indels, normal) { 
@@ -308,15 +308,21 @@ get_clone_genotypes <- function(indels, normal) {
 }
 
 
-##' get_purities
+##' get_purity
 ##' @export
-get_purity <- function(tree, purity_shape1=2, purity_shape2=2, clonality_min=0.5, clonality_max=1.0, sim_clonality=F) {
+get_purity <- function(tree, purity_min=NA, purity_max=NA, clonality_min=NA, clonality_max=NA) {
     samples <- tree$tip.label
     n_samples <- length(samples)
 
-    ## randomly generate tumor purities and clonalities
-    purities <- rbeta(n=n_samples, shape1=purity_shape1, shape2=purity_shape2)
-    if(sim_clonality==T & !is.na(clonality_min) & !is.na(clonality_max)) {
+    if(!is.na(purity_min) & !is.na(purity_max)) {
+        ## randomly generate tumor purities, uniformly distributed between our allowed range
+        purities <- runif(n=n_samples, min=purity_min, max=purity_max)
+    } else {
+        purities <- rep(1, n_samples)    
+    }
+
+    if(!is.na(clonality_min) & !is.na(clonality_max)) {
+        ## now we allow mixing of multiple clones within each sample, where the dominant clone has uniformly distributed clonality
         clonalities <- runif(n=n_samples, min=clonality_min, max=clonality_max)
     } else {
         clonalities <- rep(1, n_samples)    
@@ -330,22 +336,21 @@ get_purity <- function(tree, purity_shape1=2, purity_shape2=2, clonality_min=0.5
 }
 
 
+
 ##' get_mixing_proportions
 ##' @export
-get_mixing_proportions <- function(pc,even_mixing=F) {
+get_mixing_proportions <- function(pc, even_mixing=F) {
 
     get_sample_mixture <- function(s, pc, even_mixing) {
         ## for each sample, take the non-normal fraction and split it over the tumor samples
 
         samples <- rownames(pc)
         nonself_samples <- samples[!samples %in% c('normal',s)]
-
         prop_normal <- 1 - pc[s,'purity']
         prop_cancer <- 1 - prop_normal
         clonality <- pc[s,'clonality']
         prop_self <- clonality * prop_cancer
         prop_others <- prop_cancer - prop_self
-
         if(even_mixing==F) {
             tmp <- runif(0,1,n=length(nonself_samples))
             prop_others <- prop_others * tmp / sum(tmp)
@@ -363,11 +368,13 @@ get_mixing_proportions <- function(pc,even_mixing=F) {
         out <- out[!(sample=='normal' & prop==0),]
         out
     }
+
     pc['normal','clonality'] <- 0
     samples <- rownames(pc)
     l <- lapply(samples, get_sample_mixture, pc, even_mixing)
     d <- rbindlist(l) 
     out <- dcast( self + prop_cancer + clonality ~ sample, value.var='prop', data=d)
+    out$normal[is.na(out$normal)] <- 0
     setnames(out,'prop_cancer','purity')
     out
 }
@@ -391,7 +398,7 @@ plot_mixtures <- function(x,title='') {
     label_data$label <- paste0(prettyNum(100*label_data$value, digits=2),'%')
     p <- ggplot(pd, aes(x=self,y=value)) +
         scale_y_continuous(expand=c(0,0)) + 
-        geom_bar(stat='identity',aes(fill=variable),color='black',size=0.25) +
+        geom_bar(stat='identity',aes(fill=variable),color='black',linewidth=0.25) +
         geom_text(data=label_data,aes(label=label),vjust=-0.15,size=3) +
         scale_fill_manual(values=cols,name='Origin') +
         polyGsim_theme(base_size=12) +
@@ -403,7 +410,7 @@ plot_mixtures <- function(x,title='') {
 
 ##' get_mean_marker_lengths
 ##' @export
-get_mean_marker_lengths <- function(gt, mix, n_markers) {
+get_mean_marker_lengths <- function(gt, mix, n_markers, noise_cv=NA) { 
 
     get_mean_lengths_per_sample <- function(s, samples, gt, x) { 
         ## get admixed observed genotypes based on purity, clonality, and copy number alterations
@@ -428,6 +435,14 @@ get_mean_marker_lengths <- function(gt, mix, n_markers) {
     samples <- rownames(gt)
     l <- lapply(samples, get_mean_lengths_per_sample, samples, gt, mix)
     l <- rbindlist(l)
+
+     ## markers vary in their noise, so get a random CV per marker and use it to simulate noise for all samples
+    if(!is.na(noise_cv)) {
+        #message('Adding noise to mean lengths after mixing.')
+        noise_s <- l$mu * noise_cv
+        l$mu <- rnorm(mean=l$mu, sd=noise_s, n=nrow(l))
+    }
+
     l <- dcast(sample ~ marker, value.var='mu', data=l)
     markers <- paste0('m',1:n_markers)
     l <- l[,c('sample',markers),with=F]
@@ -443,26 +458,28 @@ get_mean_marker_lengths <- function(gt, mix, n_markers) {
 
 ##' get_anonymized_marker_lengths
 ##' @export
-get_anonymized_marker_lengths <- function(gt) {
+get_anonymized_marker_lengths <- function(d) { 
     ## anonymize by subtracting the minimum length for each marker 
-    marker_min_meanlengths <- apply(gt, 2, min)
+
+    n_markers <- ncol(d)
+    marker_min_meanlengths <- apply(d, 2, min)
     for (mi in 1:n_markers) {
-        gt[, mi] <- gt[, mi] - marker_min_meanlengths[mi]
+        d[, mi] <- d[, mi] - marker_min_meanlengths[mi]
     }
-    gt
+    d
 }
 
 
 ##' get_angular_distance_matrix
 ##' @export
-get_angular_distance_matrix <- function(d) {
+get_angular_distance_matrix <- function(d,return_z=F) {
     ## get meanlength minus normal for sim data
     ## d should be a matrix of mean-lengths where rows are samples and columns are markers
 
     normal <- d['normal',]
     for(i in 1:nrow(d)) d[i,] <- d[i,] - normal
-    colnames(d) <- paste0('m',1:ncol(d))
-    markerset <- colnames(d); 
+    markerset <- colnames(d)
+    #markerset <- names(which(colMeans(d==0) != 1))
     usedsamps <- rownames(d)
     usedsamps <- usedsamps[usedsamps!='normal']
     meanlen_diff_normal <- as.data.frame(d)
@@ -476,14 +493,13 @@ get_angular_distance_matrix <- function(d) {
             for (m in markerset) {
                 denom[t] <- denom[t] + (meanlen_diff_normal[t,m]) ^ 2
             }
-            denom[t] <- sqrt(denom[t])
+            denom[t] <- sqrt(denom[t]) 
             for (m in markerset) {
                 z[[m]][t] <- meanlen_diff_normal[t,m]/denom[t]
             }
         }
         z
     }
-    Z <- Zij(usedsamps, markerset, meanlen_diff_normal)
 
     ang_dist_matrix <- function(Z,usedsamps,ns,markerset,sel_normal_sample,power=1) {
         # for each pair of samples in Z, calculate angular distance (exclude excluded samples)
@@ -509,14 +525,25 @@ get_angular_distance_matrix <- function(d) {
         angular_dist_w_root
     }
 
-    dm <- ang_dist_matrix(Z, usedsamps, ns=length(usedsamps), markerset, sel_normal_sample='normal', power=1)
-    dm
+    Z <- Zij(usedsamps, markerset, meanlen_diff_normal)
+    if(return_z) {
+        markers <- names(Z)
+        out <- as.matrix(rbindlist(lapply(Z, as.list)))
+        rownames(out) <- markers
+        out <- t(out)
+        normal <- out[1,]
+        normal[normal!=0] <- 0
+        out <- rbind(out, normal)
+        out
+    } else {
+        ang_dist_matrix(Z, usedsamps, ns=length(usedsamps), markerset, sel_normal_sample='normal', power=1)
+    }
 }
 
 
 ##' plot_simulated_tree
 ##' @export
-plot_simulated_tree <- function(tree,layout='ape',title=NA,purities=NULL,legend.position='right') {
+plot_simulated_tree <- function(tree,layout='ape',title=NA,purities=NULL,legend.position='right', base_size=12) {
     if(!is.rooted(tree)) tree <- phytools::reroot(tree, node.number=which(tree$tip.label=='normal'))
     groups <- data.table(label=tree$tip.label)
     groups[grep('^P',label),group:='Primary']
@@ -535,7 +562,7 @@ plot_simulated_tree <- function(tree,layout='ape',title=NA,purities=NULL,legend.
     names(cols) <- c('Primary','Metastasis','Normal')
     p <- ggtree(tree,layout=layout) %<+% groups
     p <- p + geom_tiplab(aes(color=group),angle=0) +
-        polyGsim_theme(base_size=12) +
+        polyGsim_theme(base_size=base_size) +
         theme(legend.position=legend.position,
               axis.line=element_blank(),axis.text=element_blank(),axis.ticks=element_blank()) + 
         scale_color_manual(values=cols,name='Tissue')
@@ -567,7 +594,7 @@ get_mean_marker_length_matrix <- function(gt,n_markers) {
 polyGsim_theme <- function (base_size = 11, base_line_size = base_size/22, base_rect_size = base_size/22) {
     require(ggplot2)
     theme_bw(base_size = base_size, base_line_size = base_line_size, base_rect_size = base_rect_size) %+replace% 
-    theme(line = element_line(colour = "black", size = base_line_size, linetype = 1, lineend = "round"), text = element_text(colour = "black", size = base_size, lineheight = 0.9, hjust = 0.5, vjust = 0.5, angle = 0, margin = margin(), debug = F), axis.text = element_text(colour = "black", size = rel(0.8)), axis.ticks = element_line(colour = "black", size = rel(1)), panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = "black", size = rel(1)), legend.key = element_blank(), strip.background = element_blank())
+    theme(line = element_line(colour = "black", linewidth = base_line_size, linetype = 1, lineend = "round"), text = element_text(colour = "black", size = base_size, lineheight = 0.9, hjust = 0.5, vjust = 0.5, angle = 0, margin = margin(), debug = F), axis.text = element_text(colour = "black", size = rel(0.8)), axis.ticks = element_line(colour = "black", linewidth = rel(1)), panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = "black", linewidth = rel(1)), legend.key = element_blank(), strip.background = element_blank())
 }
 
 

@@ -1,9 +1,20 @@
 ##' get_normal_genotype
 ##' @export
-get_normal_genotype <- function(n_markers) {
-    marker_names <- c(paste0('m',1:n_markers,'.1'), paste0('m',1:n_markers,'.2'))
+get_normal_genotype <- function(n_markers, diploid=T) {
+    normal1 <- sort(sample(10:25,replace=T,size=n_markers))
+    normal2 <- sort(sample(10:25,replace=T,size=n_markers))
+
+    if(diploid) {
+        marker_names <- c(paste0('m',1:n_markers,'.1'), paste0('m',1:n_markers,'.2'))
+        #normal2 <- normal1 + sample(-3:3, replace=T, size=n_markers) 
+        normal <- c(normal1, normal2)
+        normal <- t(as.matrix(normal))
+    } else {
+        marker_names <- paste0('m',1:n_markers,'.1')
+        normal <- t(as.matrix(normal1))
+    }
+
     ## normal is the average germline
-    normal <- t(as.matrix(sample(10:25,replace=T,size=length(marker_names))))
     colnames(normal) <- marker_names
     normal
 }
@@ -275,7 +286,7 @@ get_indels_for_tree <- function(tree,max_gens,n_markers,mu=1e-4,bias=rep(0, n_ma
     
     ## add the normal without any indels back in
     toadd <- matrix(nrow=1,ncol=ncol(out))
-    toadd[1,1:(n_markers*2)] <- 0
+    toadd[1,1:(n_markers*max_ploidy)] <- 0
     out <- rbind(out, toadd)
     rownames(out)[nrow(out)] <- 'normal'
 
